@@ -5,7 +5,7 @@ import signal
 def main():
     # Start the token server process using uvicorn to run the ASGI app
     server_proc = subprocess.Popen([
-        sys.executable, "-m", "uvicorn", "server:app",
+        sys.executable, "-m", "uvicorn", "server:asgi_app",  # Updated to reference asgi_app
         "--host", "0.0.0.0",
         "--port", "5001"
     ])
