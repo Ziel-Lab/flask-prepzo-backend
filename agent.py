@@ -2,22 +2,23 @@ from __future__ import annotations
 import asyncio
 import logging
 import traceback
+from typing import Any
 from dotenv import load_dotenv
 from livekit.agents import (
     AutoSubscribe,
     JobContext,
-    JobProcess,
     WorkerOptions,
+    WorkerType,
     cli,
     llm,
     metrics,
+    multimodal
 )
-from livekit.agents.pipeline import VoicePipelineAgent
-from livekit.plugins import cartesia, openai, deepgram, silero
+from livekit.plugins import google
+import google.generativeai as genai
 from livekit import rtc
 from livekit.agents.llm import ChatMessage
-from api import AssistantFnc
-from prompts import WELCOME_MESSAGE, LOOKUP_PROFILE_MESSAGE
+from prompts import prompt
 from conversation_manager import ConversationManager
 import os
 import json
@@ -44,74 +45,46 @@ logger.addHandler(console_handler)
 
 logger.info("Starting voice agent application")
 
-def prewarm(proc: JobProcess):
-    """
-    Preload the voice activity detector (VAD) from Silero.
-    """
-    proc.userdata["vad"] = silero.VAD.load()
-    logger.info("Loaded VAD model in prewarm")
-
 async def entrypoint(ctx: JobContext):
     try:
-        # Set up the initial system prompt.
-        initial_ctx = llm.ChatContext().append(
-            role="system",
-            text=(
-                "You are a voice assistant created by LiveKit. "
-                "Keep responses short and use clear language."
-            ),
-        )
-
         logger.info(f"Connecting to room {ctx.room.name}")
-        await ctx.connect(auto_subscribe=AutoSubscribe.SUBSCRIBE_ALL)
+        await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
 
         participant = await ctx.wait_for_participant()
         logger.info(f"Starting voice assistant for participant {participant.identity}")
 
-        assistant_fnc = AssistantFnc()
-        
-        # Use room name as the session ID
         logger.info(f"Creating conversation manager with session ID: {ctx.room.name}")
         conversation_manager = ConversationManager(ctx.room.name)
         await conversation_manager.initialize_session(participant.identity)
 
-        agent = VoicePipelineAgent(
-            vad=ctx.proc.userdata["vad"],
-            stt=deepgram.STT(),
-            llm=openai.LLM(model="gpt-4o-mini"),
-            tts=cartesia.TTS(),
-            min_endpointing_delay=0.5,
-            max_endpointing_delay=5.0,
-            chat_ctx=initial_ctx
+        agent = multimodal.MultimodalAgent(
+            model=google.beta.realtime.RealtimeModel(
+                instructions=prompt, # Restore prompt from prompts.py
+                model="gemini-2.0-flash-exp", # Keep explicit model
+                voice="Puck", # Changed voice to Puck
+                temperature=0.8,
+                modalities=["AUDIO"],
+                api_key=os.getenv("GOOGLE_API_KEY"), # Keep explicit key
+                # vertexai defaults to False, which is correct (not using Vertex)
+            )
         )
-        logger.info("Voice Pipeline Agent created")
-
-        usage_collector = metrics.UsageCollector()
-
-        @agent.on("metrics_collected")
-        def on_metrics_collected(agent_metrics: metrics.AgentMetrics):
-            metrics.log_metrics(agent_metrics)
-            usage_collector.collect(agent_metrics)
-            logger.debug(f"Metrics collected: {agent_metrics}")
+        logger.info("Multimodal Agent created")
 
         @agent.on("user_speech_committed")
-        def on_user_speech_committed(msg: llm.ChatMessage):
+        def on_user_speech_committed(msg: str):
             try:
-                if isinstance(msg.content, list):
-                    msg.content = "\n".join(str(x) for x in msg.content)
-                
-                logger.info(f"User speech committed: '{msg.content[:50]}...'")
-                message_data = conversation_manager.create_message_data(msg, "user")
-                
-                # Add message and update conversation history
+                msg_content = msg
+
+                logger.info(f"User speech committed: '{msg_content[:50]}...'")
+                message_data = conversation_manager.create_message_data(
+                    ChatMessage(role="user", content=msg_content), "user"
+                )
+
                 conversation_manager.add_message(message_data)
-                
-                # Process user speech in a separate task
                 asyncio.create_task(process_user_speech(msg))
             except Exception as e:
                 logger.error(f"Error in user_speech_committed: {str(e)}")
                 logger.error(traceback.format_exc())
-
         @agent.on("agent_speech_committed")
         def on_agent_speech_committed(msg: llm.ChatMessage):
             try:
@@ -142,30 +115,13 @@ async def entrypoint(ctx: JobContext):
 
         async def process_user_speech(msg: llm.ChatMessage):
             try:
-                if hasattr(assistant_fnc, "has_profile"):
-                    try:
-                        if await assistant_fnc.has_profile():
-                            await handle_query(msg)
-                        else:
-                            await find_profile(msg)
-                    except Exception as e:
-                        logger.error(f"Error in has_profile: {e}")
-                        await handle_query(msg)
-                else:
-                    await handle_query(msg)
+                await handle_query(msg)
             except Exception as e:
                 logger.error(f"Error in process_user_speech: {str(e)}")
                 logger.error(traceback.format_exc())
 
-        async def find_profile(msg: llm.ChatMessage):
-            logger.info("Finding user profile")
-            agent.session.conversation.item.create(
-                ChatMessage(
-                    role="system",
-                    content=LOOKUP_PROFILE_MESSAGE(msg)
-                )
-            )
-            agent.session.response.create()
+
+
 
         async def handle_query(msg: llm.ChatMessage):
             logger.info("Handling user query")
@@ -179,24 +135,19 @@ async def entrypoint(ctx: JobContext):
 
         logger.info(f"Starting agent in room {ctx.room.name}")
         agent.start(ctx.room, participant)
-        
-        # Add initial welcome message to conversation storage
-        welcome_msg = ChatMessage(role="assistant", content=WELCOME_MESSAGE)
-        logger.info(f"Sending welcome message: '{WELCOME_MESSAGE[:50]}...'")
-        
-        # Create and store welcome message
+
+       
+        actual_welcome = "Hi there. I'm Prepzo. I help with career stuff..."
+
+        welcome_msg_obj = ChatMessage(role="assistant", content=actual_welcome)
+        logger.info(f"Adding conceptual welcome message to history: '{actual_welcome[:50]}...'")
         message_data = conversation_manager.create_message_data(
-            welcome_msg, "assistant", "agent_speech_committed"
+            welcome_msg_obj, "assistant", "initial_greeting"
         )
         conversation_manager.add_message(message_data)
-        
-        # Force an immediate update of the conversation history
         await conversation_manager.update_conversation_history()
-        
-        # Say the welcome message
-        await agent.say(WELCOME_MESSAGE, allow_interruptions=True)
-        logger.info("Welcome message sent")
-        
+       
+
     except Exception as e:
         logger.error(f"Error in entrypoint: {str(e)}")
         logger.error(traceback.format_exc())
@@ -208,7 +159,7 @@ if __name__ == "__main__":
         cli.run_app(
             WorkerOptions(
                 entrypoint_fnc=entrypoint,
-                prewarm_fnc=prewarm,
+                worker_type=WorkerType.ROOM
             ),
         )
     except Exception as e:

@@ -19,8 +19,12 @@ COPY .env .env.local
 # Copy the rest of the application code.
 COPY . .
 
+# Copy the startup script and make it executable
+COPY start.sh .
+RUN chmod +x start.sh
+
 # Expose the port that your token server uses (5001).
 EXPOSE 5001
 
-# Define the command to run your backend.
-CMD ["python", "agent.py", "dev"]
+# Define the command to run your startup script.
+CMD ["./start.sh"]

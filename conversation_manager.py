@@ -9,7 +9,7 @@ import asyncio
 import traceback
 
 # Load environment variables
-load_dotenv(dotenv_path=".env.local")
+load_dotenv() # Load from default .env file
 
 # Configure logging
 logger = logging.getLogger("conversation-manager")
