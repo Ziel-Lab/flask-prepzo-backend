@@ -1,19 +1,13 @@
-import os
-import asyncio
-import requests
-import logging
-import traceback
 from livekit.agents import llm
-import enum
-from typing import Annotated, List, Optional
-import logging
-import google.generativeai as genai
-from pinecone import Pinecone, ServerlessSpec
-# import nest_asyncio # No longer needed
+from typing import Annotated, Optional, Dict, List
+import logging, os, requests, asyncio
+from dotenv import load_dotenv
+from openai import OpenAI, AsyncOpenAI
+from pinecone import ServerlessSpec, Pinecone
+import traceback
+import aiohttp
+import json
 
-# nest_asyncio.apply() # No longer needed
-
-# Configure logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 if not logger.hasHandlers():
@@ -22,263 +16,216 @@ if not logger.hasHandlers():
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-# --- Constants ---
-# Moved constants inside the class or init where appropriate if they depend on init params
-PINECONE_INDEX_NAME = "coachingbooks"
-EMBEDDING_MODEL_NAME = "models/text-embedding-004"
+load_dotenv()
+pinecone_index_name = "coachingbooks"
 
-# --- Assistant Function Context ---
+PINECONE_API_KEY = os.environ["PINECONE_API_KEY"]
+region = os.environ["PINECONE_REGION"]
+pc = Pinecone(api_key=PINECONE_API_KEY, environment=region)
+openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) 
 
-class AssistantFnc(llm.FunctionContext):
-    """Provides callable functions for the LLM agent to interact with knowledge sources."""
-    def __init__(self, google_api_key: str, pinecone_api_key: str, pinecone_region: str, pinecone_cloud: str, serp_api_key: str):
-        super().__init__()
-        self.genai_configured = False
-        self.pinecone_index = None
-        self.serpapi_key = None
-        self.pinecone_cloud = pinecone_cloud
-        self.pinecone_region = pinecone_region
+stats = pc.Index(pinecone_index_name).describe_index_stats()
 
-        logger.info("Initializing Knowledge Base components within AssistantFnc...")
-
-        # Initialize Google Generative AI (Synchronous part of init)
-        try:
-            if not google_api_key:
-                raise ValueError("GOOGLE_API_KEY is required for embeddings.")
-            # genai.configure is synchronous
-            genai.configure(api_key=google_api_key)
-            self.genai_configured = True
-            logger.info("Google Generative AI configured successfully.")
-        except Exception as e:
-            logger.error(f"Failed to configure Google Generative AI: {e}", exc_info=True)
-            self.genai_configured = False
-
-        # Initialize Pinecone (Synchronous part of init)
-        try:
-            if not pinecone_api_key:
-                raise ValueError("PINECONE_API_KEY is required.")
-            # Pinecone client initialization is synchronous
-            pinecone_client = Pinecone(api_key=pinecone_api_key)
-            logger.info(f"Pinecone client initialized. Checking for index '{PINECONE_INDEX_NAME}'...")
-            # Listing indexes is synchronous
-            if PINECONE_INDEX_NAME not in pinecone_client.list_indexes().names:
-                logger.warning(f"Pinecone index '{PINECONE_INDEX_NAME}' not found. Knowledge base search may fail.")
-                self.pinecone_index = None
-            else:
-                # Getting index object is synchronous
-                self.pinecone_index = pinecone_client.Index(PINECONE_INDEX_NAME)
-                logger.info(f"Connected to existing Pinecone index: '{PINECONE_INDEX_NAME}'")
-        except Exception as e:
-            logger.error(f"Failed to initialize Pinecone: {e}", exc_info=True)
-            self.pinecone_index = None
-
-        # Store SerpAPI key (Synchronous part of init)
-        if not serp_api_key:
-             logger.warning("SERPAPI_KEY not provided. Web search will be unavailable.")
-             self.serpapi_key = None
-        else:
-            self.serpapi_key = serp_api_key
-            logger.info("SerpAPI key stored.")
-
-        # Final check (Synchronous part of init)
-        if self.genai_configured and self.pinecone_index is not None and self.serpapi_key is not None:
-            logger.info("AssistantFnc knowledge components initialized successfully.")
-        else:
-            logger.warning("AssistantFnc knowledge initialization incomplete. Some features may be disabled.")
-
-    # Keep _get_embedding async as it uses run_in_executor internally
-    async def _get_embedding(self, text: str, task_type="retrieval_query") -> Optional[List[float]]:
-        """Generates embedding for the given text using Google Generative AI."""
-        if not self.genai_configured:
-            logger.error("Google Generative AI not configured. Cannot generate embeddings.")
-            return None
-        if not text or not isinstance(text, str):
-            logger.error("Invalid text provided for embedding.")
-            return None
-        try:
-            # genai.embed_content is blocking, run in executor
-            loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(
-                None,
-                lambda: genai.embed_content(
-                    model=EMBEDDING_MODEL_NAME,
-                    content=text,
-                    task_type=task_type
-                )
-            )
-            return result['embedding']
-        except Exception as e:
-            logger.error(f"Failed to generate embedding: {e}", exc_info=True)
-            return None
-
-    @llm.ai_callable(
-        description=(
-            "Searches an internal knowledge base of coaching books and principles "
-            "for established concepts, strategies, and general career advice. "
-            "Use for foundational knowledge related to career coaching." # Simplified description
-        )
+if not pc.has_index(pinecone_index_name):
+    pc.create_index(
+        name=pinecone_index_name,
+        vector_type="dense",
+        dimension=1536,
+        metric="cosine",
+        spec=ServerlessSpec(
+            cloud="aws",
+            region="us-east-1"
+        ),
+        deletion_protection="disabled",
+        tags={
+            "environment": "development"
+        }
     )
-    async def query_knowledge_base( # Changed back to async def
-        self,
-        query: Annotated[
-            str,
-            llm.TypeInfo(description="The specific career coaching question or topic to search for in the knowledge base.")
-        ],
-        top_k: int = 3
-    ) -> str:
-        """Callable function to query the internal Pinecone knowledge base."""
-        logger.info(f"AI Function Call: query_knowledge_base with query: {query[:100]}...")
-        if not self.pinecone_index:
-            logger.error("Pinecone index is not available (inside query_knowledge_base).")
-            return "Internal knowledge base is currently unavailable due to an index connection issue."
-        if not query:
-            return "Cannot query knowledge base with an empty query."
-
-        # Now execute async logic directly
-        try:
-            query_embedding = await self._get_embedding(query, task_type="retrieval_query")
-            if not query_embedding:
-                return "Could not process query for knowledge base search (embedding failed)."
-
-            # Pinecone query is blocking, run in executor
-            loop = asyncio.get_running_loop()
-            results = await loop.run_in_executor(
-                None,
-                lambda: self.pinecone_index.query(
-                    vector=query_embedding,
-                    top_k=top_k,
-                    include_metadata=True
-                )
-            )
-
-            # Process results
-            if not results or not results.matches:
-                logger.warning(f"No relevant results found in knowledge base for query: {query[:100]}...")
-                return "No relevant information found in the knowledge base."
-
-            # Format results (same as before)
-            formatted_results = "Found relevant information in the knowledge base:\n\n"
-            for match in results.matches:
-                score = match.score
-                metadata = match.metadata if match.metadata else {}
-                text_chunk = metadata.get('text', 'N/A')
-                source = metadata.get('source', 'Unknown source')
-                formatted_results += f"- Source: {source}\n"
-                formatted_results += f"  Relevance Score: {score:.4f}\n"
-                formatted_results += f"  Content: {text_chunk}\n\n"
-            logger.info(f"Knowledge base query successful for: {query[:100]}...")
-            return formatted_results.strip()
-
-        except Exception as e:
-             logger.error(f"Error querying Pinecone: {e}", exc_info=True)
-             return f"An error occurred while searching the knowledge base: {e}"
-
-
-    @llm.ai_callable(
-        description=(
-            "Searches the web for current information, recent events, company details, or specific facts "
-            "when internal knowledge is insufficient or outdated. Use for timely information." # Simplified description
-        )
-    )
-    async def search_web( # Changed back to async def
-        self,
-        search_query: Annotated[
-            str,
-            llm.TypeInfo(description="The specific query to search for on the web.")
-        ]
-    ) -> str:
-        """Callable function to perform a web search using SerpAPI."""
-        logger.info(f"AI Function Call: search_web with query: {search_query[:100]}...")
-        if not self.serpapi_key:
-            logger.error("SerpAPI key not available for web search (inside search_web).")
-            return "Web search is currently unavailable (missing API key)."
-        if not search_query:
-            return "Cannot perform web search with an empty query."
-
-        # Now execute async logic directly
-        try:
-            loop = asyncio.get_running_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda: requests.get(
-                    "https://serpapi.com/search",
-                    params={
-                        "q": search_query,
-                        "api_key": self.serpapi_key,
-                        "engine": "google", "gl": "us", "hl": "en"
-                    },
-                    timeout=10
-                )
-            )
-            response.raise_for_status()
-            search_data = response.json()
-
-            # --- NEW: Format results into a natural language summary ---
-            summary_parts = []
-
-            # 1. Prioritize Answer Box
-            answer = None
-            if "answer_box" in search_data:
-                box = search_data["answer_box"]
-                if "answer" in box:
-                    answer = box['answer']
-                    summary_parts.append(f"Found a direct answer: {answer}")
-                elif "snippet" in box:
-                    answer = box['snippet']
-                    summary_parts.append(f"Found a featured snippet: {answer}")
-                 # Add other answer_box types if needed (e.g., weather, dictionary)
-
-            # 2. Use Top Organic Result if no direct answer found yet
-            if not answer and "organic_results" in search_data and search_data["organic_results"]:
-                top_result = search_data["organic_results"][0]
-                title = top_result.get('title', '')
-                snippet = top_result.get('snippet', '')
-                if title and snippet:
-                    summary_parts.append(f"The top search result, titled '{title}', mentioned: \"{snippet}\"")
-                elif snippet:
-                     summary_parts.append(f"The top search result mentioned: \"{snippet}\"")
-
-            # 3. Optionally add Knowledge Graph info if distinct
-            kg_info = None
-            if "knowledge_graph" in search_data:
-                 kg = search_data["knowledge_graph"]
-                 kg_title = kg.get('title', '')
-                 kg_description = kg.get('description', '')
-                 if kg_title and kg_description:
-                     kg_info = f"There was also related information about {kg_title}: {kg_description}"
-                     # Avoid adding if it repeats the answer/snippet significantly
-                     if answer and (kg_description in answer or answer in kg_description):
-                          pass # Don't add redundant info
-                     elif kg_info and len(summary_parts) < 2 : # Add if we don't have much else
-                          summary_parts.append(kg_info)
-
-
-            # 4. Construct the final summary
-            if not summary_parts:
-                 logger.warning(f"SerpAPI returned no usable results to summarize for query: {search_query}")
-                 return "Web search did not return any relevant information."
-
-            # Combine the parts into a concise summary
-            final_summary = "Based on a quick web search: " + " ".join(summary_parts)
-            # Limit length if necessary
-            max_summary_length = 400 # Adjust as needed
-            if len(final_summary) > max_summary_length:
-                 final_summary = final_summary[:max_summary_length] + "..."
-
-
-            logger.info(f"Web search successful for: {search_query}. Summary generated.")
-            return final_summary
-            # --- End NEW formatting ---
-
-        except requests.exceptions.Timeout:
-            logger.error(f"SerpAPI request timed out for query: {search_query}")
-            return "Web search failed: The request timed out."
-        except requests.exceptions.RequestException as e:
-            logger.error(f"SerpAPI request failed: {e}", exc_info=True)
-            return f"Web search failed: {e}"
-        except Exception as e:
-            logger.error(f"Error processing SerpAPI response: {e}", exc_info=True)
-            return f"Web search failed during processing: {e}"
-
-
+def get_embedding(text: str) -> List[float]:
+    """
+    Convert text into an embedding using OpenAI's text-embedding-3-small model.
+    
+    Args:
+        text (str): The input text to be embedded.
+    
+    Returns:
+        List[float]: A list representing the embedding vector.
+    """
+    # Ensure the input text is not empty or just whitespace
+    text = text.strip()
+    if not text:
+        raise ValueError("Input text cannot be empty for embedding.")
         
+    # Create the embedding using the updated v1.0+ syntax
+    response = openai.embeddings.create(
+        model="text-embedding-3-small",
+        input=text
+    )
+    # Extract and return the embedding from the response
+    # Access data using .data notation
+    embedding = response.data[0].embedding 
+    return embedding
+
+def upsert_document_with_embedding(doc_id: str, text: str, metadata: dict):
+    # Get the embedding for the text
+    embedding = get_embedding(text)
+
+    metadata['text'] = text
+
+    # Format the vector data for Pinecone
+    vector = {
+        "id": doc_id,
+        "values": embedding,
+        "metadata": metadata
+    }
+    # Upsert into the index
+    index = pc.Index(pinecone_index_name)
+    index.upsert(vectors=[vector])
+    print(f"Document {doc_id} upserted with embedding.")
+
+async def query_pinecone_knowledge_base(query: str, top_k: int = 3) -> str:
+    """Query Pinecone index with OpenAI embeddings"""
+    if not pinecone_index_name:
+        return "Knowledge base unavailable"
+    
+    try:
+        embedding = await get_embedding(query)
+        if not embedding:
+            return "Could not process query"
+
+        results = pc.Index(pinecone_index_name).query(
+            vector=embedding,
+            top_k=top_k,
+            include_metadata=True,
+            namespace="the_lean_startup"
+        )
+
+        formatted = []
+        for match in results.matches:
+            if match.score < 0.5:
+                continue
+                
+            meta = match.metadata or {}
+            formatted.append(
+                f"• {meta.get('text', 'No text available')}\n"
+                f"  Source: {meta.get('source', 'Unknown')}\n"
+                f"  Confidence: {match.score:.2f}"
+            )
+            
+        return "\n\n".join(formatted) if formatted else "No relevant results found"
+
+    except Exception as e:
+        logger.error(f"Knowledge base query failed: {str(e)}")
+        return "Error querying knowledge base"
+    
+def get_knowledge_base_tool_declaration():
+    """Returns the function declaration for the knowledge base tool."""
+    return {
+        "name": "query_pinecone_knowledge_base", # Match the actual function name
+        "description": (
+            "ACCESS INTERNAL KNOWLEDGE FIRST. Contains verified information about "
+            "coaching methodologies, leadership principles, and professional development strategies. "
+            "Use for: conceptual questions, historical context, established frameworks."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The specific question or topic to search for in the knowledge base."
+                }
+                # top_k could be added here if you want the LLM to control it
+            },
+            "required": ["query"]
+        }
+    }
+
+@llm.ai_callable(
+    description="""Search the internal knowledge base for specific information about coaching techniques, 
+               internal documents, or proprietary data that is not typically found on the public web. 
+               Use this when the user asks about specific concepts, methods, or content likely stored internally.
+               This searches across all available namespaces in the knowledge base.
+               Parameters:
+                 - query: The search keywords/phrase based on the user's question.
+              """
+)
+async def pinecone_search(
+    query: Annotated[str, llm.TypeInfo(description="The search query string for the internal knowledge base")]
+) -> str:
+    """
+    Performs a similarity search across all relevant namespaces in the Pinecone vector database 
+    and returns relevant text snippets.
+    """
+    # Define recommended pooling settings for query_namespaces
+    POOL_THREADS = 30
+    CONNECTION_POOL_MAXSIZE = 30
+    TOP_K_RESULTS = 5
+
+    try:
+        logger.info(f"Performing knowledge base search across namespaces - query: {query}")
+
+        # 1. Get embedding for the query
+        # Assume get_embedding is synchronous for now based on its definition
+        # If it needs to be async, use await get_embedding(query)
+        query_embedding = get_embedding(query)
+
+        # 2. Initialize index object with pooling settings
+        # Use the global pc object initialized earlier
+        index = pc.Index(
+            pinecone_index_name,
+            pool_threads=POOL_THREADS,
+            connection_pool_maxsize=CONNECTION_POOL_MAXSIZE
+        )
+
+        # 3. Get list of namespaces to query
+        namespaces_to_query = []
+        try:
+            stats = index.describe_index_stats()
+            if stats.namespaces:
+                # Query non-empty namespaces, including the default ("" if present)
+                namespaces_to_query = [ns for ns, info in stats.namespaces.items() if info.vector_count > 0]
+            if not namespaces_to_query:
+                 # Fallback to default namespace if stats fail or all namespaces are empty
+                 logger.warning("No non-empty namespaces found or failed to get stats, querying default namespace only.")
+                 namespaces_to_query = [""] # Pinecone uses empty string for default
+            logger.info(f"Querying namespaces: {namespaces_to_query}")
+        except Exception as stats_e:
+             logger.error(f"Failed to get index stats, querying default namespace only: {stats_e}")
+             namespaces_to_query = [""]
+
+        # 4. Query Pinecone across namespaces
+        query_results = index.query_namespaces(
+            vector=query_embedding,
+            top_k=TOP_K_RESULTS,
+            include_metadata=True,
+            namespaces=namespaces_to_query
+            # metric="cosine", # Usually inherited from index, but can specify
+            # include_values=False # Default is False
+        )
+        logger.debug(f"Pinecone query_namespaces results: {query_results}")
+
+        # 5. Process results (same logic as before)
+        matches = query_results.get('matches', [])
+        if not matches:
+            return "I couldn't find specific information on that topic in the knowledge base across the relevant sections."
+
+        retrieved_texts = [
+            match['metadata']['text']
+            for match in matches
+            if 'metadata' in match and 'text' in match['metadata']
+        ]
+
+        if not retrieved_texts:
+            logger.warning("Knowledge base query returned matches, but no 'text' found in metadata.")
+            return "I found some related entries, but couldn't retrieve the specific text snippets."
+
+        # 6. Format and return response
+        context = "\n\n---\n\n".join(retrieved_texts)
+        response = f"Based on the knowledge base:\n\n{context}"
+        logger.info(f"Returning knowledge base results: {response[:100]}...")
+        return response
+
+    except Exception as e:
+        logger.error(f"Knowledge base search failed: {str(e)}")
+        logger.error(traceback.format_exc())
+        return "Sorry, I encountered an error while searching the knowledge base."

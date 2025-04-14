@@ -9,16 +9,23 @@ import asyncio
 import traceback
 
 # Load environment variables
-load_dotenv() # Load from default .env file
+load_dotenv(dotenv_path=".env.local")
 
 # Configure logging
 logger = logging.getLogger("conversation-manager")
 logger.setLevel(logging.DEBUG)
 
+# Create a file handler for the logs
+file_handler = logging.FileHandler('supabase_logs.log')
+file_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
 
 # Also log to console
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.DEBUG)
+console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
 logger.info("Initializing Supabase client")
@@ -75,7 +82,7 @@ class ConversationManager:
             logger.debug(f"Session data: {json.dumps(session_data)}")
             
             # Using upsert to handle both insert and update
-            result = supabase.table("conversation_sessions").upsert(session_data).execute()
+            result = supabase.table("conversation_histories").upsert(session_data).execute()
             
             # Log the response data
             response_data = result.model_dump() if hasattr(result, 'model_dump') else str(result)
@@ -121,8 +128,8 @@ class ConversationManager:
                 result1 = supabase.table("conversation_histories").upsert(history_data).execute()
                 logger.info(f"Conversation history updated: {str(result1)}")
                 
-                # Update conversation_sessions with the same data
-                result2 = supabase.table("conversation_sessions").upsert(history_data).execute()
+                # Update conversation_histories with the same data
+                result2 = supabase.table("conversation_histories").upsert(history_data).execute()
                 logger.info(f"Session data updated: {str(result2)}")
                 
                 return result1, result2
