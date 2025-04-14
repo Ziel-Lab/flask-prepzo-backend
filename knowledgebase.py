@@ -83,72 +83,6 @@ def upsert_document_with_embedding(doc_id: str, text: str, metadata: dict):
     index.upsert(vectors=[vector])
     print(f"Document {doc_id} upserted with embedding.")
 
-async def query_pinecone_knowledge_base(query: str, top_k: int = 3) -> str:
-    """Query Pinecone index with OpenAI embeddings"""
-    if not pinecone_index_name:
-        return "Knowledge base unavailable"
-    
-    try:
-        embedding = await get_embedding(query)
-        if not embedding:
-            return "Could not process query"
-
-        results = pc.Index(pinecone_index_name).query(
-            vector=embedding,
-            top_k=top_k,
-            include_metadata=True,
-            namespace="the_lean_startup"
-        )
-
-        formatted = []
-        for match in results.matches:
-            if match.score < 0.5:
-                continue
-                
-            meta = match.metadata or {}
-            formatted.append(
-                f"• {meta.get('text', 'No text available')}\n"
-                f"  Source: {meta.get('source', 'Unknown')}\n"
-                f"  Confidence: {match.score:.2f}"
-            )
-            
-        return "\n\n".join(formatted) if formatted else "No relevant results found"
-
-    except Exception as e:
-        logger.error(f"Knowledge base query failed: {str(e)}")
-        return "Error querying knowledge base"
-    
-def get_knowledge_base_tool_declaration():
-    """Returns the function declaration for the knowledge base tool."""
-    return {
-        "name": "query_pinecone_knowledge_base", # Match the actual function name
-        "description": (
-            "ACCESS INTERNAL KNOWLEDGE FIRST. Contains verified information about "
-            "coaching methodologies, leadership principles, and professional development strategies. "
-            "Use for: conceptual questions, historical context, established frameworks."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "The specific question or topic to search for in the knowledge base."
-                }
-                # top_k could be added here if you want the LLM to control it
-            },
-            "required": ["query"]
-        }
-    }
-
-@llm.ai_callable(
-    description="""Search the internal knowledge base for specific information about coaching techniques, 
-               internal documents, or proprietary data that is not typically found on the public web. 
-               Use this when the user asks about specific concepts, methods, or content likely stored internally.
-               This searches across all available namespaces in the knowledge base.
-               Parameters:
-                 - query: The search keywords/phrase based on the user's question.
-              """
-)
 async def pinecone_search(
     query: Annotated[str, llm.TypeInfo(description="The search query string for the internal knowledge base")]
 ) -> str:
@@ -198,8 +132,8 @@ async def pinecone_search(
             vector=query_embedding,
             top_k=TOP_K_RESULTS,
             include_metadata=True,
-            namespaces=namespaces_to_query
-            # metric="cosine", # Usually inherited from index, but can specify
+            namespaces=namespaces_to_query,
+            metric="cosine"
             # include_values=False # Default is False
         )
         logger.debug(f"Pinecone query_namespaces results: {query_results}")
@@ -209,10 +143,12 @@ async def pinecone_search(
         if not matches:
             return "I couldn't find specific information on that topic in the knowledge base across the relevant sections."
 
+        # Adjust list comprehension for attribute access
         retrieved_texts = [
-            match['metadata']['text']
+            match.metadata['text']  # Use attribute access for metadata, then key access for 'text'
             for match in matches
-            if 'metadata' in match and 'text' in match['metadata']
+            # Check if match has metadata attribute and 'text' key is in the metadata dict
+            if hasattr(match, 'metadata') and match.metadata is not None and 'text' in match.metadata 
         ]
 
         if not retrieved_texts:

@@ -88,7 +88,6 @@ class AssistantFnc(llm.FunctionContext):
             raise ValueError("Missing SERPAPI_KEY environment variable")
         self.search_client = SerpAPISearch(api_key=serpapi_key)
         self.job_search_client = SerpAPIJobSearch(api_key=serpapi_key)
-        self.pinecone_search = pinecone_search
 
     def _clean_text(self, text: str) -> str:
         """Sanitize text for LLM consumption"""
@@ -243,5 +242,31 @@ class AssistantFnc(llm.FunctionContext):
         except Exception as e:
             logger.error(f"Error setting agent state: {str(e)}")
             return "Failed to update agent state."
+        
+    @llm.ai_callable(
+        description="A simple test function to verify tool calling is working."
+    )
+    def test_tool_availability(self) -> str:
+        """Simply logs a message and returns a confirmation."""
+        logger.critical("%%% SIMPLE TEST TOOL CALLED SUCCESSFULLY %%%")
+        return "Simple test tool executed successfully."
+        
+    @llm.ai_callable(   
+        description="""**Crucially, use this tool first** to search the internal knowledge base whenever the user asks about coaching techniques (like STAR method), career advice, resume building, interview preparation, or specific concepts/books relevant to our coaching philosophy (e.g., 'Deep Work', 'Zero to One'), even if you think you know the answer. This tool accesses proprietary perspectives and internal documents not available publicly. This searches across all available namespaces in the knowledge base.
+                Parameters:
+                    - query: The search keywords/phrase based on the user's question about coaching, careers, resumes, interviews, or relevant concepts/books.
+                """
+    )
+    async def search_knowledge_base(
+        self,
+        query: Annotated[str, llm.TypeInfo(description="The search query string for the internal knowledge base")]
+    ) -> str:
+        """
+        Wrapper method to call the imported pinecone_search function.
+        Performs a similarity search across all relevant namespaces in the Pinecone vector database 
+        and returns relevant text snippets.
+        """
+        # Call the imported function
+        return await pinecone_search(query=query)
         
     
