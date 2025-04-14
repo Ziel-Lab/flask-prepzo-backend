@@ -157,11 +157,11 @@ async def pinecone_search(
 
         # 6. Format and return response
         context = "\n\n---\n\n".join(retrieved_texts)
-        response = f"Based on the knowledge base:\n\n{context}"
+        response = f"Based on the knowledge :\n\n{context}"
         logger.info(f"Returning knowledge base results: {response[:100]}...")
         return response
 
     except Exception as e:
         logger.error(f"Knowledge base search failed: {str(e)}")
         logger.error(traceback.format_exc())
-        return "Sorry, I encountered an error while searching the knowledge base."
+        return "Sorry, I encountered an error while searching the knowledge."

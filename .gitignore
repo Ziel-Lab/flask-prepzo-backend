@@ -1,5 +1,5 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-/venv
+
 # dependencies
 /node_modules
 /.pnp
@@ -10,7 +10,7 @@
 !.yarn/releases
 !.yarn/versions
 /env
-
+/venv
 # testing
 /coverage
 
@@ -20,6 +20,9 @@
 
 # production
 /build
+
+agent_logs.log
+supabase_logs.log
 
 # misc
 .DS_Store
@@ -34,6 +37,8 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+gen-lang-client-0003271291-fe4c916d53c2.json
+__pycache__/
 # vercel
 .vercel
 

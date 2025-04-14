@@ -12,10 +12,12 @@ from livekit.agents import (
     llm,
     metrics,
 )
-from livekit.agents.voice_assistant import VoiceAssistant
+
+from livekit.agents.voice_assistant import  VoiceAssistant
 from livekit.plugins import deepgram, silero, google, elevenlabs
+from livekit.plugins import openai
 from livekit.agents.llm import ChatMessage
-from api import AssistantFnc  
+from api import AssistantFnc  # Updated AssistantFnc now contains the web search functionality
 from prompts import INSTRUCTIONS, WELCOME_MESSAGE
 from conversation_manager import ConversationManager
 import os
@@ -25,8 +27,17 @@ load_dotenv(dotenv_path=".env.local")
 
 logger = logging.getLogger("voice-agent")
 logger.setLevel(logging.DEBUG)
-# Also set the knowledgebase logger to debug level
-logging.getLogger("user-data").setLevel(logging.DEBUG)
+
+file_handler = logging.FileHandler('agent_logs.log')
+file_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
+
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.DEBUG)
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
 
 logger.info("Starting voice agent application")
 
@@ -39,25 +50,31 @@ def prewarm(proc: JobProcess):
 async def entrypoint(ctx: JobContext):
     try:
         # Initialize TTS client using elevenlabs
-        tts_client = elevenlabs.tts.TTS(
-            api_key=os.getenv("ELEVENLABS_API_KEY"),
-            model="eleven_turbo_v2_5",
-            voice=elevenlabs.tts.Voice(
-                id="EXAVITQu4vr4xnSDxMaL",
-                name="Bella",
-                category="premade",
-                settings=elevenlabs.tts.VoiceSettings(
-                    stability=0.71,
-                    similarity_boost=0.5,
-                    style=0.0,
-                    use_speaker_boost=True
-                ),
-            ),
-            language="en",
-            streaming_latency=3,
-            enable_ssml_parsing=False,
-            chunk_length_schedule=[80, 120, 200, 260],
+        # tts_client = elevenlabs.tts.TTS(
+        #     api_key=os.getenv("ELEVENLABS_API_KEY"),
+        #     model="eleven_flash_v2_5",
+        #     voice=elevenlabs.tts.Voice(
+        #         id="EXAVITQu4vr4xnSDxMaL",
+        #         name="Bella",
+        #         category="premade",
+        #         settings=elevenlabs.tts.VoiceSettings(
+        #             stability=0.71,
+        #             similarity_boost=0.5,
+        #             style=0.0,
+        #             use_speaker_boost=True
+        #         ),
+        #     ),
+        #     language="en",
+        #     streaming_latency=3,
+        #     enable_ssml_parsing=False,
+        #     chunk_length_schedule=[80, 120, 200, 260],
+        # )
+        tts_client = openai.TTS(
+                    model="gpt-4o-mini-tts",
+                    voice="nova",
+                    instructions="Speak in a friendly and conversational tone.",
         )
+        
         logger.info("LiveKit TTS client initialized")
 
         # Create the initial chat context with system instructions
@@ -72,6 +89,7 @@ async def entrypoint(ctx: JobContext):
         await ctx.wait_for_participant()
         logger.info(f"Participant connected in room {ctx.room.name}")
 
+        # Create your updated function context (which now includes web search)
         assistant_fnc = AssistantFnc()
 
         # (Optional) Initialize a conversation manager for logging messages
@@ -88,7 +106,7 @@ async def entrypoint(ctx: JobContext):
                 temperature=0.8
             ),
             tts=tts_client,
-            fnc_ctx=assistant_fnc,  
+            fnc_ctx=assistant_fnc,  # Your function context including the web search tool
             chat_ctx=initial_ctx
         )
         logger.info("Voice Assistant created")
@@ -104,24 +122,14 @@ async def entrypoint(ctx: JobContext):
         @assistant.on("user_speech_committed")
         def on_user_speech_committed(msg: llm.ChatMessage):
             try:
-                user_query = ""
                 if isinstance(msg.content, list):
-                    # Handle potential list content (though unlikely for speech)
-                    user_query = "\n".join(str(x) for x in msg.content)
-                else:
-                    user_query = str(msg.content)
-
-                logger.info(f"User speech committed: '{user_query[:50]}...'")
-
-                # Add original user query to conversation manager for logging
+                    msg.content = "\n".join(str(x) for x in msg.content)
+                logger.info(f"User speech committed: '{msg.content[:50]}...'")
                 conversation_manager.add_message({
                     "role": "user",
-                    "content": user_query
+                    "content": msg.content
                 })
-                # Append the original user query to the LLM context
-                assistant.chat_ctx.append(role="user", text=user_query)
-                logger.debug(f"Appended raw user query to chat context: {user_query[:100]}...")
-
+                assistant.chat_ctx.append(role="user", text=msg.content)
             except Exception as e:
                 logger.error(f"Error in user_speech_committed: {str(e)}")
                 logger.error(traceback.format_exc())
