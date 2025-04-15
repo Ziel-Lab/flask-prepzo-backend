@@ -4,6 +4,7 @@ from typing import Annotated, Optional, Dict
 import logging, os, requests
 from knowledgebase import pinecone_search
 from dotenv import load_dotenv
+from supabase_client import SupabaseEmailClient
 
 logger = logging.getLogger("user-data")
 logger.setLevel(logging.INFO)
@@ -84,6 +85,9 @@ class SerpAPIJobSearch(SerpAPISearch):
 class AssistantFnc(llm.FunctionContext):
     def __init__(self):
         super().__init__()
+        self.supabase = SupabaseEmailClient()
+        self._session_emails = {}  # Cache for current session
+        
         serpapi_key = os.getenv("SERPAPI_KEY")
         if not serpapi_key:
             raise ValueError("Missing SERPAPI_KEY environment variable")
@@ -94,6 +98,29 @@ class AssistantFnc(llm.FunctionContext):
         """Sanitize text for LLM consumption"""
         return text.replace('\n', ' ').strip()
     
+
+    # @llm.ai_callable(
+    #     description="Check for the database if email is stored successfully. Whenever you feel you want the access of the current session user email"
+    # )
+    # async def get_user_email(self) -> str:
+    #     """Returns stored email or empty string"""
+    #     try:
+    #         # First check local cache
+    #         room_name = self.agent.room.name
+    #         if room_name in self._session_emails:
+    #             return self._session_emails[room_name]
+            
+    #         # Query Supabase
+    #         email = await self.supabase.get_email_for_session(room_name)
+    #         if email:
+    #             self._session_emails[room_name] = email
+    #             return email
+    #         return ""
+    #     except Exception as e:
+    #         logger.error(f"Email lookup failed: {str(e)}")
+    #         return ""
+
+
     @llm.ai_callable(
             description="""Perform a websearch when realtime infprmation or current data (latest) is asked 
                         Use this when assisting with :
@@ -209,7 +236,7 @@ class AssistantFnc(llm.FunctionContext):
             return "Please provide your email address in the form that just appeared below."
         except Exception as e:
             logger.error(f"Failed to request email: {str(e)}")
-            return "Please provide your email address so I can send you the information."
+            return "OOPs! Please provide your email address so I can send you the information."
         
     @llm.ai_callable(
         description="Set the agent state marker to notify the frontend UI. " +
@@ -244,8 +271,6 @@ class AssistantFnc(llm.FunctionContext):
             logger.error(f"Error setting agent state: {str(e)}")
             return "Failed to update agent state."
 
-
-
     @llm.ai_callable(   
         description="""**ALWAYS, USE THIS TOOL FIRST** to search the internal knowledge base whenever the user asks about LEADERSHIP, TEAM DYNAMICS, ENTREPRENEURSHIP, LIFE DECISIONS,SARTUPS, MINDSET, GROWTH HACKING,coaching techniques (like STAR method), career advice, or specific concepts/books relevant to our coaching philosophy (e.g., 'Deep Work', 'Zero to One'),
         EVEN IF YOU THINK YOU KNOW THE ANSWER. 
@@ -266,6 +291,8 @@ class AssistantFnc(llm.FunctionContext):
         """
         # Call the imported function
         return await pinecone_search(query=query)
+
+
 
 
 
