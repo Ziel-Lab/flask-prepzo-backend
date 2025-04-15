@@ -1,7 +1,7 @@
 import os
 import uuid
 from livekit import api
-from flask import Flask
+from flask import Flask, jsonify
 from dotenv import load_dotenv
 from flask_cors import CORS
 from livekit.api import LiveKitAPI, ListRoomsRequest
@@ -12,9 +12,19 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-async def generate_room_name():
+def generate_room_name():
     # Create a random room name using UUID
     return "room-" + str(uuid.uuid4())[:8]
+
+@app.route("/health")
+def health_check():
+    """Simple health check endpoint for monitoring"""
+    return jsonify({
+        "status": "ok",
+        "service": "livekit-bot",
+        "version": "1.0.0"
+    }), 200
+
 
 @app.route("/getToken")
 async def get_token():

@@ -129,7 +129,7 @@ async def entrypoint(ctx: JobContext):
                     "role": "user",
                     "content": msg.content
                 })
-                assistant.chat_ctx.append(role="user", text=msg.content)
+                # assistant.chat_ctx.append(role="user", text=msg.content)
             except Exception as e:
                 logger.error(f"Error in user_speech_committed: {str(e)}")
                 logger.error(traceback.format_exc())
@@ -142,7 +142,7 @@ async def entrypoint(ctx: JobContext):
                     "role": "assistant",
                     "content": msg.content
                 })
-                assistant.chat_ctx.append(role="assistant", text=msg.content)
+                # assistant.chat_ctx.append(role="assistant", text=msg.content)
             except Exception as e:
                 logger.error(f"Error in agent_speech_committed: {str(e)}")
                 logger.error(traceback.format_exc())

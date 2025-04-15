@@ -23,4 +23,5 @@ COPY . .
 EXPOSE 5001
 
 # Define the command to run your backend.
-CMD ["python", "agent.py", "start"]
+# CMD ["python", "agent.py", "start"]
+CMD ["python", "run_backend.py"]
