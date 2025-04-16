@@ -83,8 +83,10 @@ class SerpAPIJobSearch(SerpAPISearch):
 
 
 class AssistantFnc(llm.FunctionContext):
-    def __init__(self):
+    def __init__(self,room_name: str):
         super().__init__()
+
+        self.room_name = room_name
         self.supabase = SupabaseEmailClient()
         self._session_emails = {}  # Cache for current session
         
@@ -99,26 +101,27 @@ class AssistantFnc(llm.FunctionContext):
         return text.replace('\n', ' ').strip()
     
 
-    # @llm.ai_callable(
-    #     description="Check for the database if email is stored successfully. Whenever you feel you want the access of the current session user email"
-    # )
-    # async def get_user_email(self) -> str:
-    #     """Returns stored email or empty string"""
-    #     try:
-    #         # First check local cache
-    #         room_name = self.agent.room.name
-    #         if room_name in self._session_emails:
-    #             return self._session_emails[room_name]
+    @llm.ai_callable(
+        description="Check for the database if email is stored successfully. Whenever you feel you want the access of the current session user email"
+    )
+    async def get_user_email(self) -> str:
+        """Returns stored email or empty string"""
+        try:
+            # First check local cache
+            roomName = self.room_name
+            logger.info(f"Checking email for room: {roomName}")
+            if roomName in self._session_emails:
+                return self._session_emails[roomName]
             
-    #         # Query Supabase
-    #         email = await self.supabase.get_email_for_session(room_name)
-    #         if email:
-    #             self._session_emails[room_name] = email
-    #             return email
-    #         return ""
-    #     except Exception as e:
-    #         logger.error(f"Email lookup failed: {str(e)}")
-    #         return ""
+            # Query Supabase
+            email = await self.supabase.get_email_for_session(roomName)
+            if email:
+                self._session_emails[roomName] = email
+                return email
+            return "email not found"
+        except Exception as e:
+            logger.error(f"Email lookup failed: {str(e)}")
+            return ""
 
 
     @llm.ai_callable(

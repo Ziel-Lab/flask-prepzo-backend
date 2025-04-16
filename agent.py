@@ -90,8 +90,9 @@ async def entrypoint(ctx: JobContext):
         logger.info(f"Participant connected in room {ctx.room.name}")
 
         # Create your updated function context (which now includes web search)
-        assistant_fnc = AssistantFnc()
-
+        assistant_fnc = AssistantFnc(room_name=ctx.room.name)
+        logger.info(f"Initialized AssistantFnc with room: {ctx.room.name}")
+        logger.debug(f"Instance room name: {assistant_fnc.room_name}")
         # (Optional) Initialize a conversation manager for logging messages
         conversation_manager = ConversationManager(ctx.room.name)
         # For example, if you wish to track conversation history:
@@ -164,12 +165,12 @@ async def entrypoint(ctx: JobContext):
         assistant.start(ctx.room)
 
         # Add and say welcome message
-        welcome_msg = ChatMessage(role="assistant", content=WELCOME_MESSAGE)
-        conversation_manager.add_message({
-            "role": "assistant",
-            "content": WELCOME_MESSAGE
-        })
-        await assistant.say(WELCOME_MESSAGE, allow_interruptions=True)
+        # welcome_msg = ChatMessage(role="assistant", content=WELCOME_MESSAGE)
+        # conversation_manager.add_message({
+        #     "role": "assistant",
+        #     "content": WELCOME_MESSAGE
+        # })
+        # await assistant.say(WELCOME_MESSAGE, allow_interruptions=True)
         logger.info("Welcome message sent")
 
     except Exception as e:
