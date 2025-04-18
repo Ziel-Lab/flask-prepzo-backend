@@ -28,15 +28,10 @@ load_dotenv(dotenv_path=".env.local")
 logger = logging.getLogger("voice-agent")
 logger.setLevel(logging.DEBUG)
 
-file_handler = logging.FileHandler('agent_logs.log')
-file_handler.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-file_handler.setFormatter(formatter)
-logger.addHandler(file_handler)
+
 
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.DEBUG)
-console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
 logger.info("Starting voice agent application")
@@ -129,7 +124,7 @@ async def entrypoint(ctx: JobContext):
                     "role": "user",
                     "content": msg.content
                 })
-                # assistant.chat_ctx.append(role="user", text=msg.content)
+               
             except Exception as e:
                 logger.error(f"Error in user_speech_committed: {str(e)}")
                 logger.error(traceback.format_exc())
@@ -142,7 +137,7 @@ async def entrypoint(ctx: JobContext):
                     "role": "assistant",
                     "content": msg.content
                 })
-                # assistant.chat_ctx.append(role="assistant", text=msg.content)
+               
             except Exception as e:
                 logger.error(f"Error in agent_speech_committed: {str(e)}")
                 logger.error(traceback.format_exc())
@@ -163,14 +158,10 @@ async def entrypoint(ctx: JobContext):
         # For VoiceAssistant, call start() with only the room name
         assistant.start(ctx.room)
 
-        # Add and say welcome message
-        welcome_msg = ChatMessage(role="assistant", content=WELCOME_MESSAGE)
-        conversation_manager.add_message({
-            "role": "assistant",
-            "content": WELCOME_MESSAGE
-        })
-        await assistant.say(WELCOME_MESSAGE, allow_interruptions=True)
-        logger.info("Welcome message sent")
+      
+        logger.info("Generating initial welcome message from LLM...")
+        await assistant.complete_chat() # LLM generates opening based on INSTRUCTIONS
+       
 
     except Exception as e:
         logger.error(f"Error in entrypoint: {str(e)}")

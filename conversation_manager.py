@@ -15,17 +15,11 @@ load_dotenv(dotenv_path=".env.local")
 logger = logging.getLogger("conversation-manager")
 logger.setLevel(logging.DEBUG)
 
-# Create a file handler for the logs
-file_handler = logging.FileHandler('supabase_logs.log')
-file_handler.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-file_handler.setFormatter(formatter)
-logger.addHandler(file_handler)
+
 
 # Also log to console
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.DEBUG)
-console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
 logger.info("Initializing Supabase client")
