@@ -47,7 +47,7 @@ class PerplexityService:
 
 
 class AssistantFnc(llm.FunctionContext):
-    def __init__(self):
+    def __init__(self,room_name: str):
         super().__init__()
         # Removed SerpAPI key loading/client init as it's replaced
         # serpapi_key = os.getenv("SERPAPI_KEY")
