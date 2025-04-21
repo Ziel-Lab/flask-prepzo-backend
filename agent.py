@@ -87,7 +87,7 @@ async def entrypoint(ctx: JobContext):
         # Create your updated function context (which now includes web search)
         assistant_fnc = AssistantFnc(room_name=ctx.room.name)
         logger.info(f"Initialized AssistantFnc with room: {ctx.room.name}")
-        logger.debug(f"Instance room name: {assistant_fnc.room_name}")
+        logger.debug(f"Instance room name: {assistant_fnc.agent_state}")
         # (Optional) Initialize a conversation manager for logging messages
         conversation_manager = ConversationManager(ctx.room.name)
         # For example, if you wish to track conversation history:
@@ -161,7 +161,7 @@ async def entrypoint(ctx: JobContext):
 
       
         logger.info("Generating initial welcome message from LLM...")
-        await assistant.complete_chat() # LLM generates opening based on INSTRUCTIONS
+        # await assistant.complete_chat() # LLM generates opening based on INSTRUCTIONS
        
 
     except Exception as e:

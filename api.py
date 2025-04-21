@@ -6,6 +6,7 @@ from knowledgebase import pinecone_search
 from dotenv import load_dotenv
 from openai import OpenAI
 import json
+from supabase_client import SupabaseEmailClient
 
 logger = logging.getLogger("user-data")
 logger.setLevel(logging.INFO)
@@ -52,6 +53,9 @@ class AssistantFnc(llm.FunctionContext):
         # Removed SerpAPI key loading/client init as it's replaced
         # serpapi_key = os.getenv("SERPAPI_KEY")
         perplexity_api_key = os.getenv("PERPLEXITY_API_KEY")
+        self.room_name = room_name
+        self.supabase = SupabaseEmailClient()
+        self._session_emails = {} # Cache for session emails
 
         # Initialize Perplexity client
         if not perplexity_api_key:
@@ -67,6 +71,28 @@ class AssistantFnc(llm.FunctionContext):
     def _clean_text(self, text: str) -> str:
         """Sanitize text for LLM consumption"""
         return text.replace('\n', ' ').strip()
+
+    @llm.ai_callable(
+        description="Check for the database if email is stored successfully. Whenever you feel you want the access of the current session user email"
+    )
+    async def get_user_email(self) -> str:
+        """Returns stored email or empty string"""
+        try:
+            # First check local cache
+            roomName = self.room_name
+            logger.info(f"Checking email for room: {roomName}")
+            if roomName in self._session_emails:
+                return self._session_emails[roomName]
+            
+            # Query Supabase
+            email = await self.supabase.get_email_for_session(roomName)
+            if email:
+                self._session_emails[roomName] = email
+                return email
+            return "email not found"
+        except Exception as e:
+            logger.error(f"Email lookup failed: {str(e)}")
+            return ""
 
     @llm.ai_callable(
             description="""Use this primary tool to access external, real-time information from the web via Perplexity.
