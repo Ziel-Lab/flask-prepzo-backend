@@ -1,6 +1,6 @@
 from livekit.agents import llm
-# Remove: from livekit.agents import function_tool
-from typing import Annotated, Optional, Dict
+from livekit.agents import function_tool
+from typing import Annotated, Optional, Dict, Literal
 import logging, os, requests
 from knowledgebase import pinecone_search
 from dotenv import load_dotenv
@@ -47,11 +47,8 @@ class PerplexityService:
             return f"Sorry, an error occurred during the web search: {str(e)}"
 
 
-class AssistantFnc(llm.FunctionContext):
+class AssistantFnc:
     def __init__(self,room_name: str):
-        super().__init__()
-        # Removed SerpAPI key loading/client init as it's replaced
-        # serpapi_key = os.getenv("SERPAPI_KEY")
         perplexity_api_key = os.getenv("PERPLEXITY_API_KEY")
         self.room_name = room_name
         self.supabase = SupabaseEmailClient()
@@ -67,14 +64,13 @@ class AssistantFnc(llm.FunctionContext):
 
         # Agent state attribute
         self.agent_state = None
+        logger.info(f"AssistantFnc helper class initialized for room: {room_name}")
 
     def _clean_text(self, text: str) -> str:
         """Sanitize text for LLM consumption"""
         return text.replace('\n', ' ').strip()
 
-    @llm.ai_callable(
-        description="Check for the database if email is stored successfully. Whenever you feel you want the access of the current session user email"
-    )
+    @function_tool()
     async def get_user_email(self) -> str:
         """Returns stored email or empty string"""
         try:
@@ -94,17 +90,10 @@ class AssistantFnc(llm.FunctionContext):
             logger.error(f"Email lookup failed: {str(e)}")
             return ""
 
-    @llm.ai_callable(
-            description="""Use this primary tool to access external, real-time information from the web via Perplexity.
-                        Handles general web searches (facts, news, company info) AND specific job searches (listings, trends, salaries).
-                        The query provided to this tool MUST be structured according to the main system prompt instructions.
-                        Parameters:
-                        - query: A structured query string detailing the context, request, and desired output format.
-            """
-    )
+    @function_tool()
     async def web_search(
         self,
-        query: Annotated[str, llm.TypeInfo(description="The structured query string formulated according to system instructions.")]
+        query: Annotated[str, "The structured query string formulated according to system instructions."]
     ) -> str:
         """
         Uses the Perplexity API via PerplexityService to get answers for general web queries or job searches.
@@ -120,10 +109,7 @@ class AssistantFnc(llm.FunctionContext):
             return "Unable to access current information due to an internal error."
  
     
-    @llm.ai_callable(
-        description="Trigger email collection form on the frontend. Use when user agrees to provide email "
-                "or requests email-based follow up. Returns instructions while signaling UI to show form."
-    )
+    @function_tool()
     async def request_email(self) -> str:
         """Signal frontend to show email form and provide user instructions"""
         try:
@@ -134,10 +120,7 @@ class AssistantFnc(llm.FunctionContext):
             # Fallback instruction if state setting fails
             return "Please provide your email address so I can send you the information."
         
-    @llm.ai_callable(
-        description="Set the agent state marker to notify the frontend UI. " +
-                    "This marker is used (for example) to trigger the email collection form when set to 'email_requested'."
-    )
+    @function_tool()
     async def set_agent_state(self, state: str) -> str:
         """
         Update the agent state marker. The frontend listens for changes to this state.
@@ -149,17 +132,8 @@ class AssistantFnc(llm.FunctionContext):
           A confirmation message or raises an error.
         """
         try:
-            # In a real scenario, this might need to interact with the livekit agent context 
-            # or a shared state manager if this function needs to be callable externally AND modify state.
-            # If called internally like from job_search, modifying self.agent_state might suffice IF 
-            # the frontend framework is observing changes to this specific AssistantFnc instance's state.
-            # A more robust method might involve context.emit_event or similar.
             self.agent_state = state 
             logger.info(f"Agent state set to: {state[:50]}..." if len(state) > 50 else f"Agent state set to: {state}")
-            
-            # The original code had browser-specific JS execution here. 
-            # This is generally not recommended from the backend Python code.
-            # State changes should be communicated through the agent framework mechanisms.
 
             return f"Agent state updated."
         except Exception as e:
@@ -169,18 +143,10 @@ class AssistantFnc(llm.FunctionContext):
 
 
 
-    @llm.ai_callable(   
-        description="""**ALWAYS, USE THIS TOOL FIRST** to search the internal knowledge base whenever the user asks about LEADERSHIP, TEAM DYNAMICS, ENTREPRENEURSHIP, LIFE DECISIONS,SARTUPS, MINDSET, GROWTH HACKING,coaching techniques (like STAR method), career advice, or specific concepts/books relevant to our coaching philosophy (e.g., 'Deep Work', 'Zero to One'),
-        EVEN IF YOU THINK YOU KNOW THE ANSWER. 
-        This tool accesses proprietary perspectives and internal documents not available publicly. 
-        This searches across all available namespaces in the knowledge base.
-            Parameters:
-                - query: The search keywords/phrase based on the user's question about coaching, careers, resumes, interviews, or relevant concepts/books.
-        """
-    )
+    @function_tool()
     async def search_knowledge_base(
         self,
-        query: Annotated[str, llm.TypeInfo(description="The search query string for the internal knowledge base")]
+        query: Annotated[str, "The search query string for the internal knowledge base"]
     ) -> str:
         """
         Wrapper method to call the imported pinecone_search function.

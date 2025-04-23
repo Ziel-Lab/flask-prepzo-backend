@@ -84,7 +84,7 @@ def upsert_document_with_embedding(doc_id: str, text: str, metadata: dict):
     print(f"Document {doc_id} upserted with embedding.")
 
 async def pinecone_search(
-    query: Annotated[str, llm.TypeInfo(description="The search query string for the internal knowledge base")]
+    query: Annotated[str, "The search query string for the internal knowledge base"]
 ) -> str:
     """
     Performs a similarity search across all relevant namespaces in the Pinecone vector database 
@@ -93,14 +93,11 @@ async def pinecone_search(
     # Define recommended pooling settings for query_namespaces
     POOL_THREADS = 30
     CONNECTION_POOL_MAXSIZE = 30
-    TOP_K_RESULTS = 5
+    TOP_K_RESULTS = 3
 
     try:
         logger.info(f"Performing knowledge base search across namespaces - query: {query}")
 
-        # 1. Get embedding for the query
-        # Assume get_embedding is synchronous for now based on its definition
-        # If it needs to be async, use await get_embedding(query)
         query_embedding = get_embedding(query)
 
         # 2. Initialize index object with pooling settings
