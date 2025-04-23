@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 import json
 from supabase_client import SupabaseEmailClient
+from conversation_manager import ConversationManager
 
 logger = logging.getLogger("user-data")
 logger.setLevel(logging.INFO)
@@ -48,11 +49,12 @@ class PerplexityService:
 
 
 class AssistantFnc:
-    def __init__(self,room_name: str):
+    def __init__(self, room_name: str, conversation_manager: ConversationManager):
         perplexity_api_key = os.getenv("PERPLEXITY_API_KEY")
         self.room_name = room_name
         self.supabase = SupabaseEmailClient()
         self._session_emails = {} # Cache for session emails
+        self.conversation_manager = conversation_manager # Store the manager
 
         # Initialize Perplexity client
         if not perplexity_api_key:
@@ -78,16 +80,24 @@ class AssistantFnc:
             roomName = self.room_name
             logger.info(f"Checking email for room: {roomName}")
             if roomName in self._session_emails:
-                return self._session_emails[roomName]
+                email = self._session_emails[roomName]
+                # Log result before returning
+                self._log_tool_result(f"get_user_email result: {email}")
+                return email
             
             # Query Supabase
             email = await self.supabase.get_email_for_session(roomName)
             if email:
                 self._session_emails[roomName] = email
+                # Log result before returning
+                self._log_tool_result(f"get_user_email result: {email}")
                 return email
-            return "email not found"
+            result = "email not found"
+            self._log_tool_result(f"get_user_email result: {result}")
+            return result
         except Exception as e:
             logger.error(f"Email lookup failed: {str(e)}")
+            self._log_tool_result(f"get_user_email error: {str(e)}")
             return ""
 
     @function_tool()
@@ -103,10 +113,15 @@ class AssistantFnc:
             logger.info("Performing Perplexity web search with structured query.")
             # Call the consolidated service method
             result = await self.perplexity_service.web_search(query)
+            # Log result before returning
+            self._log_tool_result(result)
             return result
         except Exception as e:
+            error_msg = f"Unable to access current information due to an internal error: {str(e)}"
             logger.error(f"Web search function error: {str(e)}")
-            return "Unable to access current information due to an internal error."
+            # Log error message as result
+            self._log_tool_result(error_msg)
+            return error_msg
  
     
     @function_tool()
@@ -114,11 +129,16 @@ class AssistantFnc:
         """Signal frontend to show email form and provide user instructions"""
         try:
             await self.set_agent_state("email_requested")
-            return "Please provide your email address in the form that just appeared below."
+            result = "Please provide your email address in the form that just appeared below."
+            # Log result before returning
+            self._log_tool_result(result)
+            return result
         except Exception as e:
+            error_msg = "Please provide your email address so I can send you the information."
             logger.error(f"Failed to request email: {str(e)}")
-            # Fallback instruction if state setting fails
-            return "Please provide your email address so I can send you the information."
+            # Log error message as result
+            self._log_tool_result(error_msg)
+            return error_msg
         
     @function_tool()
     async def set_agent_state(self, state: str) -> str:
@@ -134,14 +154,14 @@ class AssistantFnc:
         try:
             self.agent_state = state 
             logger.info(f"Agent state set to: {state[:50]}..." if len(state) > 50 else f"Agent state set to: {state}")
-
-            return f"Agent state updated."
+            result = f"Agent state updated."
+            # Log result before returning
+            self._log_tool_result(result)
+            return result
         except Exception as e:
             logger.error(f"Error setting agent state: {str(e)}")
             # Re-raise or handle as appropriate for the framework
             raise # Or return a specific error message
-
-
 
     @function_tool()
     async def search_knowledge_base(
@@ -158,10 +178,29 @@ class AssistantFnc:
             # Call the imported function
             results = await pinecone_search(query=query)
             logger.info(f"Knowledge base search returned {len(results)} characters.")
+            # Log result before returning
+            self._log_tool_result(results)
             return results
         except Exception as e:
+            error_msg = "I encountered an error trying to search the knowledge base."
             logger.error(f"Knowledge base search failed: {str(e)}")
-            return "I encountered an error trying to search the knowledge base."
+            # Log error message as result
+            self._log_tool_result(error_msg)
+            return error_msg
+
+    # Helper method to log tool results consistently
+    def _log_tool_result(self, result_content: str):
+        if self.conversation_manager:
+            try:
+                self.conversation_manager.add_message({
+                    "role": "tool_result",
+                    "content": str(result_content) # Ensure it's a string
+                })
+                logger.info(f"Logged tool result from function: {str(result_content)[:100]}...")
+            except Exception as log_e:
+                logger.error(f"Error logging tool result from function: {log_e}")
+        else:
+            logger.warning("ConversationManager not available in AssistantFnc for logging tool result.")
 
 
 

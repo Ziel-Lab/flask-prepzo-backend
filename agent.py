@@ -22,10 +22,10 @@ from livekit.agents import (
     FunctionTool,
     ModelSettings,
     ConversationItemAddedEvent,
-    AgentStateChangedEvent
+    AgentStateChangedEvent,
 )
 from livekit.plugins import deepgram, silero, google, openai # Keep relevant plugins
-from livekit.agents.llm import ChatMessage, ChatRole # May not be needed if using event.message directly
+# from livekit.agents.llm import ChatRole # May not be needed if using event.message directly
 from api import AssistantFnc
 from prompts import INSTRUCTIONS, WELCOME_MESSAGE
 from conversation_manager import ConversationManager
@@ -51,9 +51,10 @@ logger.info("Starting voice agent application (v1.0+ structure)")
 # Define the custom Agent class
 class PrepzoAgent(Agent):
     def __init__(self, room_name: str, conversation_manager: ConversationManager):
-        self.assistant_fnc = AssistantFnc(room_name=room_name)
-        self.conversation_manager = conversation_manager # Store ConversationManager instance
-
+        self.conversation_manager = conversation_manager # Store manager
+        # Pass conversation_manager to AssistantFnc constructor
+        self.assistant_fnc = AssistantFnc(room_name=room_name, conversation_manager=self.conversation_manager)
+        
         tools = [
             self.assistant_fnc.get_user_email,
             self.assistant_fnc.web_search,
@@ -64,23 +65,23 @@ class PrepzoAgent(Agent):
         super().__init__(instructions=INSTRUCTIONS, tools=tools)
         logger.info(f"PrepzoAgent initialized for room: {room_name} with {len(tools)} tools.")
 
-    # Override llm_node to intercept tool calls and results
     async def llm_node(
         self,
         chat_ctx: llm.ChatContext,
         tools: list[llm.FunctionTool],
         model_settings: ModelSettings,
     ) -> AsyncIterable[llm.ChatChunk]:
+        # REMOVED: Tool result logging attempt from llm_node
+        
+        # Process the LLM stream and log tool call *requests*
         llm_stream = Agent.default.llm_node(self, chat_ctx, tools, model_settings)
         
         async for chunk in llm_stream:
             if hasattr(chunk, 'delta') and hasattr(chunk.delta, 'tool_calls') and chunk.delta.tool_calls:
                 tool_calls = chunk.delta.tool_calls
-                # Log the raw string representation of the tool_calls object
                 tool_calls_str = str(tool_calls)
-                logger.info(f"LLM requested tool call(s): {tool_calls_str}") # Keep terminal log for comparison
+                logger.info(f"LLM requested tool call(s): {tool_calls_str}")
                 try:
-                    # Log the raw string representation to ConversationManager
                     self.conversation_manager.add_message({
                         "role": "tool_call",
                         "content": tool_calls_str 
@@ -132,37 +133,45 @@ async def entrypoint(ctx: JobContext):
         )
         logger.info("AgentSession created")
 
-        # Define Event Handlers using documented events and string names
+        # Event handlers remain the same (on_conversation_item_added logs user/assistant)
         @session.on("conversation_item_added")
         def on_conversation_item_added(event: ConversationItemAddedEvent):
+            if not hasattr(event, 'item'):
+                logger.warning("'conversation_item_added' event missing 'item' attribute.")
+                return
             item = event.item
             role_str = ""
-            if item.role == "user":
+            item_role = getattr(item, 'role', None)
+            if item_role == "user":
                 role_str = "user"
-            elif item.role == "assistant":
+            elif item_role == "assistant":
+                if hasattr(item, 'tool_calls') and item.tool_calls: 
+                    return 
                 role_str = "assistant"
-            
-            # Use text_content attribute as per documentation
-            content = item.text_content 
-            
+            # NOTE: Tool results are now logged directly from the tool function via AssistantFnc
+            # elif item_role == "tool": 
+            #    ... (removed tool result logging from here)
+            else:
+                return # Ignore other roles
+
+            content = getattr(item, 'text_content', None)
             if role_str and content:
                 logger.info(f"Conversation item added ({role_str}): '{content[:50]}...'")
                 try:
-                    conversation_manager.add_message({
-                        "role": role_str,
-                        "content": content
-                    })
+                    conversation_manager.add_message({"role": role_str,"content": content})
                     logger.info(f"Logged {role_str} message to ConversationManager.")
                 except Exception as e:
-                    logger.error(f"Error in on_conversation_item_added handler: {str(e)}")
+                    logger.error(f"Error in on_conversation_item_added handler logging {role_str}: {str(e)}")
                     logger.error(traceback.format_exc())
             elif role_str:
                  logger.warning(f"Received ConversationItemAddedEvent for role '{role_str}' with empty text content.")
 
         @session.on("agent_state_changed")
         def on_agent_state_changed(event: AgentStateChangedEvent):
-            logger.info(f"Agent state changed from {event.old_state} to {event.new_state}")
-
+            old_state = getattr(event, 'old_state', 'Unknown')
+            new_state = getattr(event, 'new_state', 'Unknown')
+            logger.info(f"Agent state changed from {old_state} to {new_state}")
+            
         # --- End Event Handlers ---
 
         logger.info(f"Starting AgentSession in room {ctx.room.name}")
