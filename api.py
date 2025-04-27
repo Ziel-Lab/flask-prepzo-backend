@@ -1,5 +1,5 @@
-from livekit.agents import llm
-from livekit.agents import function_tool
+from livekit.agents import llm, function_tool
+from livekit.agents.llm import ToolContext
 from typing import Annotated, Optional, Dict, Literal
 import logging, os, requests
 from knowledgebase import pinecone_search
@@ -7,6 +7,11 @@ from dotenv import load_dotenv
 from openai import OpenAI
 import json
 from supabase_client import SupabaseEmailClient
+import asyncio
+from livekit.rtc import RemoteParticipant
+import traceback
+from conversation_manager import ConversationManager
+
 
 logger = logging.getLogger("user-data")
 logger.setLevel(logging.INFO)
@@ -48,8 +53,14 @@ class PerplexityService:
 
 
 class AssistantFnc:
-    def __init__(self,room_name: str):
+    def __init__(self, ctx: ToolContext, room_name: str):
         perplexity_api_key = os.getenv("PERPLEXITY_API_KEY")
+        
+        self.ctx = ctx
+        self.room = ctx.room
+        self.local = ctx.room.local_participant
+        self.room_name = ctx.room.name
+
         self.room_name = room_name
         self.supabase = SupabaseEmailClient()
         self._session_emails = {} # Cache for session emails
@@ -69,6 +80,18 @@ class AssistantFnc:
     def _clean_text(self, text: str) -> str:
         """Sanitize text for LLM consumption"""
         return text.replace('\n', ' ').strip()
+
+    @function_tool()
+    async def request_resume(self) -> str:
+        """Signal frontend to show resume upload form and provide user instructions"""
+        try:
+            await self.set_agent_state("resume_upload_requested")
+            return "Please upload your resume using the form that just appeared below."
+        except Exception as e:
+            logger.error(f"Failed to request resume: {str(e)}")
+            # Fallback instruction if state setting fails
+            return "Please upload your resume so I can provide personalized recommendations."
+
 
     @function_tool()
     async def get_user_email(self) -> str:
@@ -134,8 +157,16 @@ class AssistantFnc:
         try:
             self.agent_state = state 
             logger.info(f"Agent state set to: {state[:50]}..." if len(state) > 50 else f"Agent state set to: {state}")
-
-            return f"Agent state updated."
+            
+            # Create metadata payload
+            metadata = json.loads(self.local.metadata or '{}')
+            metadata["agent_state"] = state
+            
+            # Set the metadata on the local participant
+            await self.local.set_metadata(json.dumps(metadata))
+            logger.info(f"Agent metadata updated with new state: {state}")
+            
+            return f"Agent state updated to {state}"
         except Exception as e:
             logger.error(f"Error setting agent state: {str(e)}")
             # Re-raise or handle as appropriate for the framework
@@ -162,6 +193,225 @@ class AssistantFnc:
         except Exception as e:
             logger.error(f"Knowledge base search failed: {str(e)}")
             return "I encountered an error trying to search the knowledge base."
+
+    async def on_participant_update(self, participant: RemoteParticipant):
+        """Handle participant metadata updates (like when email is submitted)"""
+        try:
+            if not participant.metadata:
+                return
+                
+            data = json.loads(participant.metadata)
+            logger.info(f"Participant update received: {participant.identity}, metadata: {data}")
+            
+            # Handle email submission
+            if 'userEmail' in data:
+                email = data['userEmail']
+                logger.info(f"Email received from participant: {participant.identity}")
+                
+                # Store email using supabase client
+                await self.supabase.store_email_for_session(self.room_name, email)
+                
+                # Cache the email in assistant_fnc
+                self._session_emails[self.room_name] = email
+                
+            # Handle resume upload metadata
+            if 'resumeUploaded' in data and data['resumeUploaded']:
+                logger.info(f"Resume upload detected in metadata from participant: {participant.identity}")
+                logger.info(f"Resume metadata: name={data.get('resumeName', 'unknown')}, size={data.get('resumeSize', 'unknown')}")
+                
+                # Set agent state to acknowledge resume upload
+                await self.set_agent_state("resume_received")
+                
+                # The actual resume content should be coming through the byte stream
+                # This metadata handling is just to acknowledge receipt
+                
+        except Exception as e:
+            logger.error(f"Error handling participant update: {str(e)}")
+
+    @function_tool()
+    async def process_resume_content(self, resume_name: str = "") -> str:
+        """Process resume content and provide recommendations based on it."""
+        try:
+            logger.info(f"Processing resume content for {resume_name}")
+            
+            # 0. If we have a cached analysis from Gemini, use it directly
+            if hasattr(self, '_last_resume_analysis') and self._last_resume_analysis:
+                analysis = self._last_resume_analysis
+                logger.info(f"Using cached resume analysis ({len(analysis)} chars)")
+                return f"I've analyzed your resume {resume_name or 'the uploaded file'} in detail. Here's my feedback and suggestions:\n\n{analysis}"  
+            
+            # Try multiple approaches to get the resume analysis
+            resume_analysis = None
+            
+            # 1. Try the conversation manager directly
+            if hasattr(self.ctx, 'conversation_manager'):
+                try:
+                    logger.info("Trying to retrieve analysis from conversation manager")
+                    messages = await self.ctx.conversation_manager.get_messages_async()
+                    
+                    if messages:
+                        logger.info(f"Found {len(messages)} messages in conversation manager")
+                        # Find resume analysis in messages
+                        for message in reversed(messages):
+                            if (message.get('role') == 'system' and 
+                                'RESUME ANALYSIS' in message.get('content', '')):
+                                resume_analysis = message['content']
+                                logger.info(f"Found resume analysis in conversation manager ({len(resume_analysis)} chars)")
+                                break
+                except Exception as cm_error:
+                    logger.error(f"Error accessing conversation manager: {str(cm_error)}")
+                    logger.error(traceback.format_exc())
+            
+            # 2. Try the conversation backup files if conversation manager failed
+            if not resume_analysis:
+                backup_dir = os.path.join(os.getcwd(), "conversation_backups")
+                backup_file = os.path.join(backup_dir, f"conversation_{self.room_name}.json")
+                
+                if os.path.exists(backup_file):
+                    try:
+                        logger.info(f"Found conversation backup at {backup_file}")
+                        with open(backup_file, "r") as f:
+                            messages = json.load(f)
+                            
+                        # Find resume analysis in messages
+                        for message in reversed(messages):
+                            if (message.get('role') == 'system' and 
+                                'RESUME ANALYSIS' in message.get('content', '')):
+                                resume_analysis = message['content']
+                                logger.info(f"Found resume analysis in backup file ({len(resume_analysis)} chars)")
+                                break
+                    except Exception as backup_error:
+                        logger.error(f"Error reading conversation backup: {str(backup_error)}")
+                        logger.error(traceback.format_exc())
+            
+            # 3. Try database approach
+            if not resume_analysis:
+                try:
+                    from conversation_manager import ConversationManager, supabase
+                    
+                    # Try to directly query the database
+                    logger.info(f"Querying database for resume analysis for room {self.room_name}")
+                    result = None
+                    
+                    try:
+                        result = await supabase.table("conversations").select("conversation").eq("session_id", self.room_name).limit(1).execute()
+                    except Exception as query_error:
+                        logger.error(f"Error querying database: {str(query_error)}")
+                        logger.error(traceback.format_exc())
+                    
+                    if result and result.data and len(result.data) > 0:
+                        logger.info(f"Found conversation in database")
+                        conversation_data = result.data[0]["conversation"]
+                        
+                        # Parse conversation data
+                        messages = []
+                        if isinstance(conversation_data, str):
+                            messages = json.loads(conversation_data)
+                        else:
+                            messages = conversation_data
+                        
+                        logger.info(f"Found {len(messages)} messages in conversation history")
+                        
+                        # Find resume analysis in messages
+                        for message in reversed(messages):
+                            if (message.get('role') == 'system' and 
+                                'RESUME ANALYSIS' in message.get('content', '')):
+                                resume_analysis = message['content']
+                                logger.info(f"Found resume analysis in conversation history ({len(resume_analysis)} chars)")
+                                break
+                except Exception as db_error:
+                    logger.error(f"Error retrieving conversation from database: {str(db_error)}")
+                    logger.error(traceback.format_exc())
+            
+            # If we found an analysis, format a response
+            if resume_analysis:
+                # Format a response
+                message = (
+                    f"I've analyzed your resume {resume_name or 'you uploaded'} in detail. "
+                    "Here's my feedback and personalized recommendations based on your profile:\n\n"
+                )
+                
+                # Extract the actual analysis from the system message if needed
+                if 'RESUME ANALYSIS' in resume_analysis:
+                    analysis_parts = resume_analysis.split('RESUME ANALYSIS')
+                    if len(analysis_parts) > 1:
+                        parts = analysis_parts[1].split(':', 1)
+                        if len(parts) > 1:
+                            clean_analysis = parts[1].strip()
+                            message += clean_analysis
+                        else:
+                            message += analysis_parts[1].strip()
+                    else:
+                        message += resume_analysis
+                else:
+                    message += resume_analysis
+                
+                message += "\n\nWould you like me to elaborate on any specific aspect or discuss potential career opportunities based on your background?"
+                
+                # Make sure it's in the conversation manager
+                if hasattr(self.ctx, 'conversation_manager'):
+                    try:
+                        current_messages = await self.ctx.conversation_manager.get_messages_async()
+                        # Check if we already have a response for this
+                        has_response = False
+                        for msg in current_messages:
+                            if msg.get('role') == 'assistant' and "I've analyzed your resume" in msg.get('content', ''):
+                                has_response = True
+                                break
+                                
+                        if not has_response:
+                            # Add the assistant response to the conversation
+                            self.ctx.conversation_manager.add_message({
+                                "role": "assistant",
+                                "content": message
+                            })
+                            logger.info("Added resume feedback response to conversation")
+                    except Exception as add_error:
+                        logger.error(f"Error adding response to conversation: {str(add_error)}")
+                        
+                return message
+            
+            # Complete fallback message if all else fails
+            logger.warning("No resume analysis found in any storage")
+            return (
+                f"I see your resume {resume_name or ''} has been uploaded, but I'm having trouble accessing the detailed analysis. "
+                "I can still help you with job recommendations. Could you tell me about your key skills and the types of roles you're interested in?"
+            )
+            
+        except Exception as e:
+            logger.error(f"Error processing resume content: {str(e)}")
+            logger.error(traceback.format_exc())
+            return (
+                "I encountered an issue while processing your resume. "
+                "Could you tell me about your background and the types of roles you're interested in?"
+            )
+
+    @function_tool()
+    async def fetch_resume_raw(self) -> str:
+        """Return the raw resume PDF content in base64 encoding."""
+        try:
+            messages = await self.ctx.conversation_manager.get_messages_async()
+            for msg in messages:
+                metadata = msg.get("metadata", {})
+                if metadata.get("type") == "resume_raw":
+                    return msg.get("content", "")
+            return ""  # No raw resume found
+        except Exception as e:
+            logger.error(f"Error fetching raw resume: {e}")
+            return ""
+
+    @function_tool()
+    async def fetch_resume_analysis(self) -> str:
+        """Return the text of the resume analysis generated by Gemini."""
+        try:
+            messages = await self.ctx.conversation_manager.get_messages_async()
+            for msg in reversed(messages):
+                if msg.get("role") == "system" and msg.get("content", "").startswith("RESUME ANALYSIS"):
+                    return msg.get("content", "")
+            return ""  # No analysis found
+        except Exception as e:
+            logger.error(f"Error fetching resume analysis: {e}")
+            return ""
 
 
 

@@ -73,7 +73,8 @@ async def get_token():
         .with_name(name) \
         .with_grants(api.VideoGrants(
             room_join=True,
-            room=room
+            room=room,
+            can_update_own_metadata=True
         ))
     
     return token.to_jwt()

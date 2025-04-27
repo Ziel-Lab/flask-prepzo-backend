@@ -212,4 +212,13 @@ class ConversationManager:
         except Exception as e:
             logger.error(f"Error creating message data: {str(e)}")
             logger.error(traceback.format_exc())
-            raise 
+            raise
+
+    def get_messages(self):
+        """Retrieve all messages stored in the conversation."""
+        return self.messages
+
+    # If you need an async version
+    async def get_messages_async(self):
+        """Asynchronously retrieve all messages stored in the conversation."""
+        return self.messages 
