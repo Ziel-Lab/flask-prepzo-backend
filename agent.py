@@ -61,6 +61,8 @@ class PrepzoAgent(Agent):
             self.assistant_fnc.request_email,
             self.assistant_fnc.set_agent_state,
             self.assistant_fnc.search_knowledge_base,
+            self.assistant_fnc.request_resume,
+            self.assistant_fnc.get_resume_information,
         ]
         super().__init__(instructions=INSTRUCTIONS, tools=tools)
         logger.info(f"PrepzoAgent initialized for room: {room_name} with {len(tools)} tools.")
@@ -171,7 +173,7 @@ async def entrypoint(ctx: JobContext):
             old_state = getattr(event, 'old_state', 'Unknown')
             new_state = getattr(event, 'new_state', 'Unknown')
             logger.info(f"Agent state changed from {old_state} to {new_state}")
-            
+
         # --- End Event Handlers ---
 
         logger.info(f"Starting AgentSession in room {ctx.room.name}")

@@ -11,7 +11,7 @@ def main():
     ])
     
     # Start the LiveKit agent process with the "dev" argument
-    agent_proc = subprocess.Popen([sys.executable, "agent.py", "start"])
+    agent_proc = subprocess.Popen([sys.executable, "agent.py", "dev"])
     
     def terminate_processes(signum, frame):
         print("Terminating processes...")
