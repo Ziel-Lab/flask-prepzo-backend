@@ -23,7 +23,7 @@ class ResumeTools:
         """
         self.room_name = room_name
         self.conversation_manager = conversation_manager
-        self.docai_service = ResumeAnalysisService()
+        self.resume_service = ResumeAnalysisService()
         self.agent_state = None  # Track agent state
         logger.info(f"ResumeTools initialized for room: {room_name}")
     
@@ -108,76 +108,104 @@ class ResumeTools:
             raise ToolError("Could not complete resume request")
 
 
+   
     # @function_tool()
     # async def get_resume_information(self) -> str:
     #     """
-    #     Analyzes the user's previously uploaded resume using the Google Cloud Document AI Summarizer
-    #     to extract key information. Call this when the user asks to analyze, summarize, or get details
-    #     from their resume.
-    #     """
-    #     try:
-    #         logger.info(f"Attempting to analyze resume for session: {self.room_name}")
-    #         result = await self.docai_service.summarize_resume(self.room_name)
-    #         self._log_tool_result(result)
-    #         return result
-    #     except Exception as e:
-    #         error_msg = "An unexpected error occurred while attempting to analyze your resume."
-    #         logger.error(f"Resume analysis error: {str(e)}")
-    #         self._log_tool_result(error_msg)
-    #         return error_msg
-    
-    # @function_tool()
-    # async def get_resume_information(self) -> str:
-    #     """
-    #     Analyzes the user's previously uploaded resume using our combined
-    #     Document AI + Vision-based ResumeAnalysisService and returns
-    #     a summary of the key layout, visual, and ATS-compatibility metrics.
+    #     Analyzes the user's previously uploaded resume using our
+    #     Gemini-powered ResumeAnalysisService and returns a comprehensive
+    #     analysis including skills, experience, education, and ATS compatibility.
     #     """
     #     try:
     #         logger.info(f"Attempting to analyze resume for session: {self.room_name}")
 
-    #     # Call the new ResumeAnalysisService (returns a dict)
-    #         report: dict = await self.docai_service.analyze_resume(self.room_name)
-    #         self._log_tool_result(report)
+    #         # Call the Gemini-based analysis service
+    #         analysis: dict = await self.resume_service.analyze_resume(self.room_name)
+    #         self._log_tool_result(analysis)
 
-    #     # If there was an error, short-circuit
-    #         if "error" in report:
-    #             return report["error"]
+    #         # Short-circuit on error
+    #         if "error" in analysis:
+    #             return analysis["error"]
+            
+    #         # Check if we have structured data or raw analysis
+    #         if "raw_analysis" in analysis:
+    #             # Return the raw text analysis from Gemini if JSON parsing failed
+    #             return f"📄 **Resume Analysis**\n\n{analysis['raw_analysis']}"
 
-    #     # Build a readable summary
-    #         summary_lines = []
-    #         summary_lines.append("📄 **Resume Analysis Report**\n")
+    #         # Build formatted summary
+    #         lines = ["📄 **Resume Analysis Report**\n"]
+            
+    #         # Skills
+    #         skills = analysis.get("skills", [])
+    #         if skills:
+    #             if isinstance(skills, list):
+    #                 skills_str = ", ".join(skills)
+    #             else:
+    #                 skills_str = str(skills)
+    #             lines.append(f"• **Key Skills**: {skills_str}")
+            
+    #         # Experience
+    #         exp_years = analysis.get("experience_years")
+    #         if exp_years:
+    #             lines.append(f"• **Experience**: {exp_years}")
+            
+    #         # Education
+    #         education = analysis.get("education")
+    #         if education:
+    #             lines.append(f"• **Education**:")
+    #             if isinstance(education, list):
+    #                 # Handle list of dictionaries case
+    #                 if education and isinstance(education[0], dict):
+    #                     for edu in education:
+    #                         if isinstance(edu, dict):
+    #                             # Extract relevant fields from education dictionary
+    #                             degree = edu.get("degree", "")
+    #                             institution = edu.get("institution", "")
+    #                             year = edu.get("year", "")
+    #                             if degree or institution or year:
+    #                                 edu_text = ", ".join(filter(None, [degree, institution, year]))
+    #                                 lines.append(f"  - {edu_text}")
+    #                             else:
+    #                                 # Fallback to string representation of the dictionary
+    #                                 lines.append(f"  - {str(edu)}")
+    #                         else:
+    #                             lines.append(f"  - {str(edu)}")
+    #                 else:
+    #                     # Handle list of strings case
+    #                     for edu in education:
+    #                         lines.append(f"  - {str(edu)}")
+    #             else:
+    #                 # Handle string or other type case
+    #                 lines.append(f"  {str(education)}")
+            
+    #         # Areas of expertise
+    #         expertise = analysis.get("expertise_areas")
+    #         if expertise:
+    #             if isinstance(expertise, list):
+    #                 exp_str = ", ".join(expertise)
+    #             else:
+    #                 exp_str = str(expertise)
+    #             lines.append(f"• **Areas of Expertise**: {exp_str}")
+            
+    #         # ATS score
+    #         ats_score = analysis.get("ats_score", 0)
+    #         lines.append(f"\n• **ATS Compatibility Score**: {ats_score}/100")
+            
+    #         # Improvement suggestions
+    #         suggestions = analysis.get("improvement_suggestions", [])
+    #         if suggestions:
+    #             lines.append("\n• **Suggestions to Improve**:")
+    #             if isinstance(suggestions, list):
+    #                 for i, sugg in enumerate(suggestions, 1):
+    #                     lines.append(f"  {i}. {sugg}")
+    #             else:
+    #                 lines.append(f"  {suggestions}")
 
-    #     # Sections
-    #         secs = report.get("sections", [])
-    #         summary_lines.append(f"• Detected section breaks: {len(secs)}")
-    #         if secs:
-    #             locs = [f"(page {s['page']+1}, block {s['block']+1})" for s in secs]
-    #             summary_lines.append(f"  → {', '.join(locs)}")
-
-    #     # Formatting
-    #         # fmt = report.get("formatting", {})
-    #         # summary_lines.append(f"\n• Formatting consistency: {'✅' if fmt.get('consistent') else '⚠️'}")
-
-    #     # Logo analysis
-    #         logo = report.get("logo_analysis", {})
-    #         total = logo.get("total", 0)
-    #         header = logo.get("header", 0)
-    #         summary_lines.append(f"\n• Logos detected: {total} (in header: {header})")
-
-    #     # Color score
-    #         color_score = report.get("color_score", 0.0)
-    #         summary_lines.append(f"\n• Color harmony score: {color_score:.2f}/1.00")
-
-    #     # ATS score
-    #         ats = report.get("ats_score", 0)
-    #         summary_lines.append(f"\n• ATS Compatibility Score: {ats}/100")
-
-    #         return "\n".join(summary_lines)
+    #         return "\n".join(lines)
 
     #     except Exception as e:
     #         error_msg = "An unexpected error occurred while attempting to analyze your resume."
-    #         logger.error(f"Resume analysis error: {str(e)}", exc_info=True)
+    #         logger.error(f"Resume analysis error: {e}", exc_info=True)
     #         self._log_tool_result(error_msg)
     #         return error_msg
 
@@ -185,46 +213,42 @@ class ResumeTools:
     async def get_resume_information(self) -> str:
         """
         Analyzes the user's previously uploaded resume using our
-        Document AI–only ResumeAnalysisService and returns a summary
-        of the structural and ATS-compatibility metrics.
+        Gemini-powered ResumeAnalysisService for comprehensive
+        visual and content analysis.
         """
         try:
             logger.info(f"Attempting to analyze resume for session: {self.room_name}")
 
-            # Call the trimmed-down analysis service
-            report: dict = await self.docai_service.analyze_resume(self.room_name)
-            self._log_tool_result(report)
+            # Call the Gemini-based analysis service
+            analysis: dict = await self.resume_service.analyze_resume(self.room_name)
+            self._log_tool_result(analysis)
 
-        # Short-circuit on error
-            if "error" in report:
-                return report["error"]
-
-        # Build summary
-            lines = ["📄 **Resume Analysis Report**\n"]
-
-        # Section breaks
-            secs = report.get("sections", [])
-            lines.append(f"• Detected section breaks: {len(secs)}")
-            if secs:
-                locs = [f"(page {s['page']+1}, block {s['block']+1})" for s in secs]
-                lines.append(f"  → {', '.join(locs)}")
-
-        # Formatting consistency
-            fmt = report.get("formatting", {})
-            consistent = fmt.get("consistent", False)
-            lines.append(f"\n• Formatting consistency: {'✅ Consistent' if consistent else '⚠️ Inconsistent'}")
-
-        # ATS score
-            ats = report.get("ats_score", 0)
-            lines.append(f"\n• ATS Compatibility Score: {ats}/100")
-
-            return "\n".join(lines)
+            # Short-circuit on error
+            if "error" in analysis:
+                return analysis["error"]
+            
+            # Handle the narrative format from multimodal analysis
+            if "format" in analysis and analysis["format"] == "narrative":
+                if "analysis" in analysis:
+                    resume_analysis = analysis["analysis"]
+                    # Return the formatted analysis
+                    return f"📄 **Resume Analysis**\n\n{resume_analysis}"
+                else:
+                    return "I couldn't find any analysis content in the response."
+                
+            # Fallback for other formats (though we don't expect this path to be used)
+            if "raw_analysis" in analysis:
+                return f"📄 **Resume Analysis**\n\n{analysis['raw_analysis']}"
+            
+            # This is a fallback that shouldn't be reached with the new implementation
+            return "I was able to analyze your resume, but couldn't format the results correctly. Please try again."
 
         except Exception as e:
             error_msg = "An unexpected error occurred while attempting to analyze your resume."
             logger.error(f"Resume analysis error: {e}", exc_info=True)
             self._log_tool_result(error_msg)
             return error_msg
+
 
 
 

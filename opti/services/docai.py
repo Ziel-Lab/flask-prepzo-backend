@@ -1,471 +1,328 @@
-# # """
-# # Google Document AI service for resume parsing and summarization
-# # """
-# # import asyncio
-# # import pathlib
-# # import traceback
-# # from google.cloud import documentai_v1 as documentai
-# # import shutil
-# # from ..config import settings
-# # from ..utils.logging_config import setup_logger
-
-# # # Use centralized logger
-# # logger = setup_logger("docai-service")
-
-# # class DocumentAIService:
-# #     """Service for processing documents using Google Document AI"""
-    
-# #     def __init__(self):
-# #         """Initialize the Document AI service with credentials from settings"""
-# #         # Check if Document AI settings are configured
-# #         self.is_configured = False
-        
-# #         if not (settings.GOOGLE_PROJECT_ID and settings.DOCAI_LOCATION and settings.DOCAI_SUMMARIZER_PROCESSOR_ID):
-# #             missing_config = []
-# #             if not settings.GOOGLE_PROJECT_ID: missing_config.append("GOOGLE_PROJECT_ID")
-# #             if not settings.DOCAI_LOCATION: missing_config.append("DOCAI_LOCATION")
-# #             if not settings.DOCAI_SUMMARIZER_PROCESSOR_ID: missing_config.append("DOCAI_SUMMARIZER_PROCESSOR_ID")
-            
-# #             logger.warning(f"Document AI service not fully configured. Missing: {', '.join(missing_config)}")
-# #             return
-            
-# #         try:
-# #             # Initialize Document AI client
-# #             client_options = {"api_endpoint": f"{settings.DOCAI_LOCATION}-documentai.googleapis.com"}
-# #             self.client = documentai.DocumentProcessorServiceClient(client_options=client_options)
-            
-# #             # Store configuration
-# #             self.project_id = settings.GOOGLE_PROJECT_ID
-# #             self.location = settings.DOCAI_LOCATION
-# #             self.processor_id = settings.DOCAI_SUMMARIZER_PROCESSOR_ID
-            
-# #             self.is_configured = True
-# #             logger.info(f"Document AI service initialized for processor: {self.processor_id}")
-# #         except Exception as e:
-# #             logger.error(f"Failed to initialize Document AI service: {e}")
-# #             logger.error(traceback.format_exc())
-            
-# #     async def summarize_resume(self, session_id: str) -> str:
-# #         """
-# #         Analyze and summarize a resume using Document AI
-        
-# #         Args:
-# #             session_id (str): The unique session identifier to find the resume file
-            
-# #         Returns:
-# #             str: Summary of the resume
-# #         """
-# #         if not self.is_configured:
-# #             return "Resume analysis is not available because the Document AI service is not properly configured."
-            
-# #         # Clean up old files if needed
-# #         try:
-# #             self._cleanup_old_uploads()
-# #         except Exception as e:
-# #             logger.error(f"Error during upload directory cleanup: {e}")
-# #             # Continue processing even if cleanup fails
-        
-# #         found_file_path = None
-# #         file_mime_type = None
-        
-# #         try:
-# #             # Find the uploaded resume file
-# #             supported_formats = {
-# #                 '.pdf': 'application/pdf',
-# #                 '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-# #                 # Add other Document AI supported types if needed
-# #             }
-            
-# #             for ext, mime_type in supported_formats.items():
-# #                 potential_path = settings.UPLOAD_FOLDER / f"{session_id}_resume{ext}"
-# #                 if potential_path.is_file():
-# #                     found_file_path = potential_path
-# #                     file_mime_type = mime_type
-# #                     break
-
-# #             if not found_file_path:
-# #                 logger.warning(f"No resume file found for session: {session_id}")
-# #                 return "I could not find an uploaded resume to analyze. Please upload it first (PDF or DOCX preferred)."
-
-# #             logger.info(f"Found resume file: {found_file_path} (Type: {file_mime_type})")
-
-# #             # Process with Document AI
-# #             document_result = await self._process_document(found_file_path, file_mime_type)
-            
-# #             # Extract summary from result
-# #             summary = document_result.text.strip()
-            
-# #             if not summary:
-# #                 logger.warning(f"Document AI returned an empty summary")
-# #                 return "I was able to process the resume file, but couldn't generate a useful summary."
-
-# #             logger.info(f"Received summary from Document AI ({len(summary)} chars)")
-# #             return f"Here is a summary of the resume:\n\n{summary}"
-            
-# #         except Exception as e:
-# #             logger.error(f"Error analyzing resume: {str(e)}")
-# #             logger.error(traceback.format_exc())
-# #             return f"I encountered an error while analyzing the resume: {str(e)}"
-    
-# #     async def _process_document(self, file_path: pathlib.Path, mime_type: str) -> documentai.Document:
-# #         """
-# #         Process a document with Document AI
-        
-# #         Args:
-# #             file_path (pathlib.Path): Path to the document file
-# #             mime_type (str): MIME type of the document
-            
-# #         Returns:
-# #             documentai.Document: The processed document
-# #         """
-# #         try:
-# #             # Construct processor resource name
-# #             processor_name = self.client.processor_path(
-# #                 self.project_id, self.location, self.processor_id
-# #             )
-            
-# #             # Read file content
-# #             with open(file_path, "rb") as file:
-# #                 content = file.read()
-                
-# #             # Create raw document
-# #             raw_document = documentai.RawDocument(content=content, mime_type=mime_type)
-            
-# #             # Configure the process request
-# #             request = documentai.ProcessRequest(
-# #                 name=processor_name,
-# #                 raw_document=raw_document,
-# #             )
-            
-# #             logger.info(f"Sending document to processor: {processor_name}")
-            
-# #             # Process document in executor to avoid blocking
-# #             loop = asyncio.get_running_loop()
-# #             result = await loop.run_in_executor(None, self.client.process_document, request)
-            
-# #             logger.info("Received response from Document AI")
-# #             return result.document
-            
-# #         except Exception as e:
-# #             logger.error(f"Error in Document AI processing: {e}")
-# #             logger.error(traceback.format_exc())
-# #             raise
-    
-# #     def _cleanup_old_uploads(self):
-# #         """Remove old files from the uploads directory if there are too many"""
-# #         upload_folder = settings.UPLOAD_FOLDER
-        
-# #         if upload_folder.exists() and upload_folder.is_dir():
-# #             items = list(upload_folder.iterdir())
-# #             if len(items) >= 10:
-# #                 logger.warning(f"Uploads directory reached {len(items)} items. Cleaning up...")
-# #                 for item_path in items:
-# #                     try:
-# #                         if item_path.is_file():
-# #                             item_path.unlink()
-# #                             logger.info(f"Deleted file: {item_path}")
-# #                         elif item_path.is_dir():
-# #                             shutil.rmtree(item_path)
-# #                             logger.info(f"Deleted directory: {item_path}")
-# #                     except Exception as e:
-# #                         logger.error(f"Error deleting item {item_path}: {e}")
-# #                 logger.info("Uploads directory cleanup complete") 
-
-
-# import asyncio
-# import pathlib
-# import traceback
-# from google import genai
-# from google.genai.types import HttpOptions, Part
-# import shutil
-# from ..config import settings
-# from ..utils.logging_config import setup_logger
-
-# logger = setup_logger("gemini-service")
-
-# class GeminiService:
-#     """Service for processing resumes using Vertex AI Gemini models"""
-
-#     def __init__(self):
-#         self.is_configured = False
-#         if not (settings.GOOGLE_PROJECT_ID and settings.GOOGLE_CLOUD_LOCATION):
-#             missing = []
-#             if not settings.GOOGLE_PROJECT_ID: missing.append("GOOGLE_CLOUD_PROJECT")
-#             if not settings.GOOGLE_CLOUD_LOCATION: missing.append("GOOGLE_CLOUD_LOCATION")
-#             logger.warning(f"Gemini service not configured. Missing: {', '.join(missing)}")
-#             return
-
-#         try:
-#             # Initialize Gen AI client for Vertex AI
-#             client_opts = HttpOptions(api_version="v1")
-#             self.client = genai.Client(http_options=client_opts)
-#             self.model = settings.GEMINI_MODEL_ID or "gemini-2.5-flash"  # default model
-#             self.is_configured = True
-#             logger.info(f"Gemini service initialized with model: {self.model}")  # :contentReference[oaicite:5]{index=5}
-#         except Exception as e:
-#             logger.error(f"Failed to initialize Gemini client: {e}")
-#             logger.error(traceback.format_exc())
-
-#     async def summarize_resume(self, session_id: str) -> str:
-#         """Summarize a resume file using Gemini"""
-#         if not self.is_configured:
-#             return "Resume summarization service is not configured."
-
-#         try:
-#             self._cleanup_old_uploads()
-#         except Exception as e:
-#             logger.error(f"Error cleaning uploads: {e}")
-
-#         # Locate the uploaded resume
-#         supported = {'.pdf': 'application/pdf', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}
-#         file_path = None
-#         mime_type = None
-#         for ext, mtype in supported.items():
-#             path = settings.UPLOAD_FOLDER / f"{session_id}_resume{ext}"
-#             if path.is_file():
-#                 file_path, mime_type = path, mtype
-#                 break
-
-#         if not file_path:
-#             logger.warning(f"No resume found for session {session_id}")
-#             return "Please upload a PDF or DOCX resume first."
-
-#         logger.info(f"Using file {file_path} for summarization")  # :contentReference[oaicite:6]{index=6}
-
-#         try:
-#             # Prepare multipart content: file part then prompt
-#             file_part = Part.from_path(str(file_path), mime_type=mime_type)  # :contentReference[oaicite:7]{index=7}
-#             prompt = (
-#                 "You are a professional resume summarization specialist. "
-#                 "Provide a concise summary highlighting skills, experience, and achievements."
-#             )
-#             # Send request to Gemini
-#             response = self.client.models.generate_content(
-#                 model=self.model,
-#                 contents=[file_part, prompt]
-#             )  # :contentReference[oaicite:8]{index=8}
-
-#             summary = response.text.strip()
-#             if not summary:
-#                 logger.warning("Gemini returned empty summary")
-#                 return "Gemini processed the resume but did not return a summary."
-
-#             logger.info(f"Received summary ({len(summary)} chars)")
-#             return f"Resume Summary:\n\n{summary}"
-
-#         except Exception as e:
-#             logger.error(f"Error summarizing resume: {e}")
-#             logger.error(traceback.format_exc())
-#             return f"Error during summarization: {e}"
-
-#     def _cleanup_old_uploads(self):
-#         """Cleanup logic unchanged"""
-#         upload_folder = settings.UPLOAD_FOLDER
-#         if upload_folder.exists() and upload_folder.is_dir():
-#             items = list(upload_folder.iterdir())
-#             if len(items) >= 10:
-#                 logger.warning(f"Cleaning up {len(items)} old items")
-#                 for item in items:
-#                     try:
-#                         if item.is_file():
-#                             item.unlink()
-#                         else:
-#                             shutil.rmtree(item)
-#                     except Exception as e:
-#                         logger.error(f"Failed to delete {item}: {e}")
-#                 logger.info("Cleanup complete")
-
 
 # import asyncio
 # import pathlib
 # import traceback
 # import shutil
-# from io import BytesIO
-# from pdf2image import convert_from_path
-# from PIL import Image
-# from google.cloud import documentai_v1 as documentai
-# from google.cloud import vision
+# import os
+# import json
+# from datetime import datetime, timedelta
+# from typing import Optional, Dict, List
+# from PyPDF2 import PdfReader
+# import google.generativeai as genai
+# from tenacity import retry as tenacity_retry, stop_after_attempt, wait_exponential
 # from ..config import settings
 # from ..utils.logging_config import setup_logger
-# from google.oauth2 import service_account
 
-# logger = setup_logger("docai-vision-service")
-# creds = service_account.Credentials.from_service_account_file(
-#     r"D:\prepzo\prepzo-backend\flask-prepzo-backend\opti\cred.json"
-# )
+# logger = setup_logger("gemini-resume-service")
+
+# # Load credentials
+# genai.configure(api_key=settings.GEMINI_API_KEY)
+
 # class ResumeAnalysisService:
-#     """Service for parsing and analyzing resumes using Document AI and Vision API"""
+#     """Enhanced resume analysis service with Gemini API"""
+    
+#     MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+#     SUPPORTED_MIME_TYPES = {
+#         '.pdf': 'application/pdf',
+#         '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+#     }
 
 #     def __init__(self):
-#         """Initialize clients and configuration"""
+#         """Initialize with configuration validation"""
 #         self.is_configured = False
-#         missing = []
-#         # Document AI config
-#         if not (settings.GOOGLE_PROJECT_ID and settings.DOCAI_LOCATION and settings.DOCAI_LAYOUT_PROCESSOR_ID):
-#             if not settings.GOOGLE_PROJECT_ID: missing.append("GOOGLE_PROJECT_ID")
-#             if not settings.DOCAI_LOCATION: missing.append("DOCAI_LOCATION")
-#             if not settings.DOCAI_LAYOUT_PROCESSOR_ID: missing.append("DOCAI_LAYOUT_PROCESSOR_ID")
-#         # Vision API requires only credentials
-#         if missing:
-#             logger.warning(f"ResumeAnalysisService missing config: {', '.join(missing)}")
+        
+#         if not self._validate_config():
 #             return
-
-#         # Document AI client
+            
 #         try:
-#             endpoint = f"{settings.DOCAI_LOCATION}-documentai.googleapis.com"
-
-
-#             self.dai_client = documentai.DocumentProcessorServiceClient(
-#                 client_options={"api_endpoint": endpoint},
-#                 credentials=creds
-#             )
-#             self.layout_processor = self.dai_client.processor_path(
-#                 settings.GOOGLE_PROJECT_ID,
-#                 settings.DOCAI_LOCATION,
-#                 settings.DOCAI_LAYOUT_PROCESSOR_ID,
-#             )
-#             # Vision client
-#             # self.vision_client = vision.ImageAnnotatorClient()
-
+#             self._initialize_gemini()
 #             self.is_configured = True
-#             logger.info("ResumeAnalysisService initialized successfully")
+#             logger.info("Gemini service initialized successfully")
 #         except Exception as e:
-#             logger.error(f"Error initializing services: {e}")
+#             logger.error(f"Initialization failed: {str(e)}")
 #             logger.error(traceback.format_exc())
 
-#     async def analyze_resume(self, session_id: str) -> dict:
-#         """
-#         End-to-end resume analysis:
-#           - Document AI layout parsing
-#           - Vision API visual analysis
-#           - Section, formatting, ATS scoring
-#         Returns a JSON report
-#         """
-#         if not self.is_configured:
-#             return {"error": "Service not configured"}
+#     def _validate_config(self) -> bool:
+#         """Validate all required configuration parameters"""
+#         required_config = {
+#             "GEMINI_API_KEY": settings.GEMINI_API_KEY,
+#             "UPLOAD_FOLDER": settings.UPLOAD_FOLDER
+#         }
+        
+#         missing = [key for key, value in required_config.items() if not value]
+#         if missing:
+#             logger.error(f"Missing configuration: {', '.join(missing)}")
+#             return False
+            
+#         if not settings.UPLOAD_FOLDER.exists():
+#             logger.error(f"Upload folder does not exist: {settings.UPLOAD_FOLDER}")
+#             return False
+            
+#         return True
 
-#         # cleanup older uploads
+#     def _initialize_gemini(self):
+#         """Initialize Gemini model"""
+#         # Test connection to Gemini API
 #         try:
-#             self._cleanup_old_uploads()
-#         except Exception:
-#             logger.exception("Cleanup failed")
+#             self.model = genai.GenerativeModel('gemini-2.0-flash')
+#             # Simple test to verify API is working
+#             response = self.model.generate_content("Hello, test connection")
+#             if not response:
+#                 raise ValueError("Could not connect to Gemini API")
+#             logger.info("Successfully connected to Gemini API")
+#         except Exception as e:
+#             logger.error(f"Gemini API initialization failed: {str(e)}")
+#             raise
 
-#         # locate resume file
-#         supported = {
-#             '.pdf': 'application/pdf',
-#             '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-#         }
-#         file_path = None
-#         mime = None
-#         for ext, m in supported.items():
-#             path = settings.UPLOAD_FOLDER / f"{session_id}_resume{ext}"
-#             if path.is_file():
-#                 file_path, mime = path, m
-#                 break
-#         if not file_path:
-#             logger.warning("No resume found to analyze")
-#             return {"error": "No resume uploaded"}
+#     @tenacity_retry(
+#         stop=stop_after_attempt(3),
+#         wait=wait_exponential(multiplier=1, min=2, max=10),
+#         reraise=True
+#     )
+#     async def analyze_resume(self, session_id: str) -> Dict:
+#         """Main analysis workflow with enhanced error handling"""
+#         try:
+#             file_info = await self._locate_resume_file(session_id)
+#             if not file_info:
+#                 return {"error": "No valid resume found"}
 
-#         # 1) Layout parsing
-#         layout = await asyncio.get_running_loop().run_in_executor(
-#             None, self._process_layout, file_path, mime
-#         )
+#             # Add debug logging
+#             logger.info(f"Processing file: {file_info['path']} (size: {file_info['size']} bytes, type: {file_info['mime_type']})")
+            
+#             # Extract text from resume
+#             resume_text = await self._extract_text_from_file(file_info["path"])
+#             if not resume_text:
+#                 return {"error": "Failed to extract text from resume"}
+            
+#             # Analyze with Gemini
+#             analysis = await self._analyze_with_gemini(resume_text)
+#             return analysis
+            
+#         except Exception as e:
+#             logger.error(f"Analysis failed: {str(e)}")
+#             logger.error(traceback.format_exc())
+#             return {"error": f"Analysis failed: {str(e)}"}
 
-#         # 2) Convert first page to image
-#         image = self._convert_first_page(file_path)
-#         # 3) Visual analysis
-#         visuals = self._analyze_visuals(image)
+#     async def _locate_resume_file(self, session_id: str) -> Optional[Dict]:
+#         """Find and validate resume file with enhanced checks"""
+#         # Add debug logging of all files in the upload folder
+#         try:
+#             files_in_dir = list(settings.UPLOAD_FOLDER.iterdir())
+#             logger.debug(f"Files in upload dir: {[f.name for f in files_in_dir]}")
+#         except Exception as e:
+#             logger.warning(f"Could not list directory contents: {str(e)}")
+        
+#         for ext, mime_type in self.SUPPORTED_MIME_TYPES.items():
+#             file_path = settings.UPLOAD_FOLDER / f"{session_id}_resume{ext}"
+#             logger.debug(f"Checking for file: {file_path}")
+            
+#             if not file_path.exists():
+#                 continue
+                
+#             try:
+#                 file_size = file_path.stat().st_size
+#                 if file_size == 0:
+#                     logger.warning(f"File exists but is empty: {file_path}")
+#                     continue
+                    
+#                 if file_size > self.MAX_FILE_SIZE:
+#                     logger.warning(f"File too large: {file_size} bytes")
+#                     continue
+                
+#                 # Add more detailed logging
+#                 logger.info(f"Found valid resume: {file_path} ({file_size} bytes)")
+                
+#                 # Test file readability
+#                 with open(file_path, "rb") as f:
+#                     test_read = f.read(100)  # Try to read first 100 bytes
+#                     if not test_read:
+#                         logger.warning(f"File exists but could not read content: {file_path}")
+#                         continue
+                
+#                 return {
+#                     "path": file_path,
+#                     "mime_type": mime_type,
+#                     "size": file_size
+#                 }
+#             except OSError as e:
+#                 logger.warning(f"File access error: {str(e)}")
+                
+#         logger.warning(f"No valid resume found for session {session_id}")
+#         return None
 
-#         # 4) Build report
-#         report = {
-#             "sections": self._identify_sections(layout),
-#             "formatting": self._check_formatting(layout),
-#             "logo_analysis": self._validate_logos(visuals["logos"]),
-#             "color_score": self._calculate_color_score(visuals["dominant_colors"]),
-#             "ats_score": self._calculate_ats_score(layout)
-#         }
-#         return report
+#     async def _extract_text_from_file(self, file_path: pathlib.Path) -> str:
+#         """Extract text from PDF or DOCX file"""
+#         try:
+#             # Run in executor to avoid blocking the event loop
+#             text = await asyncio.get_running_loop().run_in_executor(
+#                 None, self._extract_text, file_path
+#             )
+            
+#             if not text.strip():
+#                 logger.warning(f"Extracted empty text from {file_path}")
+#                 return ""
+                
+#             logger.info(f"Successfully extracted {len(text)} characters from {file_path}")
+#             return text
+            
+#         except Exception as e:
+#             logger.error(f"Text extraction failed: {str(e)}")
+#             logger.error(traceback.format_exc())
+#             return ""
+            
+#     def _extract_text(self, file_path: pathlib.Path) -> str:
+#         """Helper method to extract text from files"""
+#         if file_path.suffix.lower() == '.pdf':
+#             try:
+#                 reader = PdfReader(file_path)
+#                 text = ""
+#                 for page in reader.pages:
+#                     text += page.extract_text() + "\n"
+#                 return text
+#             except Exception as e:
+#                 logger.error(f"PDF text extraction failed: {str(e)}")
+#                 raise
+                
+#         elif file_path.suffix.lower() == '.docx':
+#             # For DOCX, you would need to add a package like python-docx
+#             # This is a placeholder implementation
+#             try:
+#                 from docx import Document
+#                 doc = Document(file_path)
+#                 text = "\n".join([para.text for para in doc.paragraphs])
+#                 return text
+#             except ImportError:
+#                 logger.error("python-docx package not installed for DOCX processing")
+#                 raise
+#             except Exception as e:
+#                 logger.error(f"DOCX text extraction failed: {str(e)}")
+#                 raise
+                
+#         else:
+#             raise ValueError(f"Unsupported file format: {file_path.suffix}")
 
-#     def _process_layout(self, file_path: pathlib.Path, mime_type: str) -> dict:
-#         """Call Document AI to extract layout"""
-#         with open(file_path, "rb") as f:
-#             raw = documentai.RawDocument(content=f.read(), mime_type=mime_type)
-#         request = documentai.ProcessRequest(name=self.layout_processor, raw_document=raw)
-#         result = self.dai_client.process_document(request)
-#         doc = result.document
-#         layout = {"pages": []}
-#         for page in doc.pages:
-#             blocks = []
-#             for blk in page.blocks:
-#                 blocks.append({
-#                     "text": blk.layout.text_anchor.content,
-#                     "bbox": [(v.x, v.y) for v in blk.layout.bounding_poly.vertices]
-#                 })
-#             layout["pages"].append({"blocks": blocks})
-#         return layout
+#     async def _analyze_with_gemini(self, resume_text: str) -> Dict:
+#         """Analyze resume text with Gemini API"""
+#         try:
+#             # Run in executor to avoid blocking the event loop
+#             analysis = await asyncio.get_running_loop().run_in_executor(
+#                 None, self._run_gemini_analysis, resume_text
+#             )
+#             return analysis
+#         except Exception as e:
+#             logger.error(f"Gemini analysis failed: {str(e)}")
+#             raise
 
-#     def _convert_first_page(self, pdf_path: pathlib.Path) -> Image.Image:
-#         images = convert_from_path(str(pdf_path), dpi=200, first_page=1, last_page=1)
-#         return images[0]
+#     def _run_gemini_analysis(self, resume_text: str) -> Dict:
+#         """Core analysis using Gemini model"""
+#         try:
+#             prompt = f"""
+#             Analyze the following resume and extract the following information:
+            
+#             1. Key skills and technologies (as a list)
+#             2. Years of experience in each role
+#             3. Education details
+#             4. Work experience summary
+#             5. Areas of expertise
+#             6. Calculate an ATS score (0-100) based on overall quality, format, and completeness
+#             7. Provide 3 specific suggestions to improve this resume
+            
+#             Resume text:
+#             {resume_text}
+            
+#             Format your response as structured JSON with the following keys:
+#             skills, experience_years, education, work_summary, expertise_areas, ats_score, improvement_suggestions
+#             """
+            
+#             response = self.model.generate_content(prompt)
+            
+#             if not response or not response.text:
+#                 raise ValueError("Empty response from Gemini API")
+                
+#             # Try to parse as JSON, fallback to formatted response
+#             try:
+#                 # Clean the text to ensure it only contains valid JSON
+#                 clean_text = response.text.strip()
+#                 # Remove markdown code blocks if present
+#                 if clean_text.startswith("```json"):
+#                     clean_text = clean_text.split("```json")[1]
+#                 if clean_text.endswith("```"):
+#                     clean_text = clean_text.rsplit("```", 1)[0]
+#                 clean_text = clean_text.strip()
+                
+#                 analysis = json.loads(clean_text)
+#                 return analysis
+#             except json.JSONDecodeError as e:
+#                 logger.warning(f"Could not parse Gemini response as JSON: {str(e)}")
+#                 # Fallback to raw text response
+#                 return {"raw_analysis": response.text}
+                
+#         except Exception as e:
+#             logger.error(f"Gemini processing failed: {str(e)}")
+#             logger.error(traceback.format_exc())
+#             raise
 
-#     def _analyze_visuals(self, image: Image.Image) -> dict:
-#         buffer = BytesIO()
-#         image.save(buffer, format="PNG")
-#         img = vision.Image(content=buffer.getvalue())
-#         # logos
-#         logos_resp = self.vision_client.logo_detection(image=img)
-#         logos = [{
-#             "name": a.description,
-#             "score": a.score,
-#             "bbox": [(v.x, v.y) for v in a.bounding_poly.vertices]
-#         } for a in logos_resp.logo_annotations]
-#         # colors
-#         props = self.vision_client.image_properties(image=img)
-#         colors = [{
-#             "rgb": (c.color.red, c.color.green, c.color.blue),
-#             "score": c.score,
-#             "pixel_fraction": c.pixel_fraction
-#         } for c in props.image_properties_annotation.dominant_colors.colors]
-#         return {"logos": logos, "dominant_colors": colors}
+#     def _cleanup_old_uploads(self, max_age_hours: int = 24, max_files: int = 20):
+#         """Improved cleanup with age-based removal"""
+#         now = datetime.now()
+#         deleted = 0
+        
+#         for item in settings.UPLOAD_FOLDER.iterdir():
+#             try:
+#                 item_age = datetime.fromtimestamp(item.stat().st_mtime)
+#                 if (now - item_age) > timedelta(hours=max_age_hours):
+#                     if item.is_file():
+#                         item.unlink()
+#                         deleted += 1
+#                     elif item.is_dir():
+#                         shutil.rmtree(item)
+#                         deleted += 1
+#             except Exception as e:
+#                 logger.warning(f"Failed to delete {item}: {str(e)}")
+                
+#         logger.info(f"Cleaned up {deleted} old files")
+        
+#         # Fallback count-based cleanup if still too many files
+#         remaining = list(settings.UPLOAD_FOLDER.iterdir())
+#         if len(remaining) > max_files:
+#             for item in remaining[:len(remaining)-max_files]:
+#                 try:
+#                     item.unlink()
+#                 except Exception as e:
+#                     logger.warning(f"Emergency cleanup failed for {item}: {str(e)}")
 
-#     def _identify_sections(self, layout: dict, gap: float = 20.0) -> list:
-#         sections = []
-#         for pi, pg in enumerate(layout["pages"]):
-#             prev_y = None
-#             for bi, blk in enumerate(pg["blocks"]):
-#                 y = blk["bbox"][0][1]
-#                 if prev_y and y - prev_y > gap:
-#                     sections.append({"page": pi, "block": bi})
-#                 prev_y = y
-#         return sections
+#     # Add a new method for manual document inspection
+#     async def inspect_document(self, session_id: str) -> Dict:
+#         """Inspect document without full processing for debugging"""
+#         try:
+#             file_info = await self._locate_resume_file(session_id)
+#             if not file_info:
+#                 return {"error": "No valid resume found"}
+                
+#             # Basic file metadata
+#             result = {
+#                 "file_path": str(file_info["path"]),
+#                 "mime_type": file_info["mime_type"],
+#                 "size_bytes": file_info["size"],
+#                 "exists": file_info["path"].exists(),
+#                 "readable": os.access(file_info["path"], os.R_OK)
+#             }
+            
+#             # Try to read first few bytes
+#             try:
+#                 with open(file_info["path"], "rb") as f:
+#                     header = f.read(50)
+#                     result["header_hex"] = header.hex()
+#                     result["header_ascii"] = ''.join(chr(b) if 32 <= b < 127 else '.' for b in header)
+#             except Exception as e:
+#                 result["read_error"] = str(e)
+                
+#             return result
+            
+#         except Exception as e:
+#             logger.error(f"Document inspection failed: {str(e)}")
+#             return {"error": f"Inspection failed: {str(e)}"}
 
-#     def _check_formatting(self, layout: dict) -> dict:
-#         # stub for token-level formatting
-#         return {"consistent": True}
-
-#     def _validate_logos(self, logos: list) -> dict:
-#         header = [l for l in logos if l["bbox"][0][1] < 100]
-#         return {"total": len(logos), "header": len(header)}
-
-#     def _calculate_color_score(self, colors: list) -> float:
-#         return sum(c["score"] for c in colors) / max(1, len(colors))
-
-#     def _calculate_ats_score(self, layout: dict) -> int:
-#         # simple deduction
-#         score = 100
-#         return max(0, score - 10)
-
-#     def _cleanup_old_uploads(self):
-#         folder = settings.UPLOAD_FOLDER
-#         if folder.exists():
-#             items = list(folder.iterdir())
-#             if len(items) > 10:
-#                 for item in items:
-#                     try:
-#                         if item.is_file(): item.unlink()
-#                         else: shutil.rmtree(item)
-#                     except: pass
-#                 logger.info("Old uploads cleaned")
 
 
 
@@ -473,151 +330,296 @@ import asyncio
 import pathlib
 import traceback
 import shutil
-from google.cloud import documentai_v1 as documentai
+import os
+import json
+import base64
+from datetime import datetime, timedelta
+from typing import Optional, Dict, List
+import google.generativeai as genai
+from tenacity import retry as tenacity_retry, stop_after_attempt, wait_exponential
 from ..config import settings
 from ..utils.logging_config import setup_logger
-from google.oauth2 import service_account
 
-logger = setup_logger("docai-service")
-# Load credentials for Document AI
-creds = service_account.Credentials.from_service_account_file(
-    r"D:\prepzo\prepzo-backend\flask-prepzo-backend\opti\cred.json"
-)
+logger = setup_logger("gemini-resume-service")
+
+# Load credentials
+genai.configure(api_key=settings.GEMINI_API_KEY)
 
 class ResumeAnalysisService:
-    """Service for parsing and analyzing resumes using Document AI"""
+    """Enhanced resume analysis service with Gemini API"""
+    
+    MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+    SUPPORTED_MIME_TYPES = {
+        '.pdf': 'application/pdf',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    }
 
     def __init__(self):
-        """Initialize clients and configuration"""
+        """Initialize with configuration validation"""
         self.is_configured = False
-        missing = []
-        if not (settings.GOOGLE_PROJECT_ID and settings.DOCAI_LOCATION and settings.DOCAI_LAYOUT_PROCESSOR_ID):
-            if not settings.GOOGLE_PROJECT_ID: missing.append("GOOGLE_PROJECT_ID")
-            if not settings.DOCAI_LOCATION: missing.append("DOCAI_LOCATION")
-            if not settings.DOCAI_LAYOUT_PROCESSOR_ID: missing.append("DOCAI_LAYOUT_PROCESSOR_ID")
-
-        if missing:
-            logger.warning(f"ResumeAnalysisService missing config: {', '.join(missing)}")
+        
+        if not self._validate_config():
             return
-
+            
         try:
-            endpoint = f"{settings.DOCAI_LOCATION}-documentai.googleapis.com"
-            self.client = documentai.DocumentProcessorServiceClient(
-                client_options={"api_endpoint": endpoint},
-                credentials=creds
-            )
-            self.processor_name = self.client.processor_path(
-                settings.GOOGLE_PROJECT_ID,
-                settings.DOCAI_LOCATION,
-                settings.DOCAI_LAYOUT_PROCESSOR_ID
-            )
+            self._initialize_gemini()
             self.is_configured = True
-            logger.info("ResumeAnalysisService initialized successfully with Document AI")
+            logger.info("Gemini service initialized successfully")
         except Exception as e:
-            logger.error(f"Error initializing Document AI client: {e}")
+            logger.error(f"Initialization failed: {str(e)}")
             logger.error(traceback.format_exc())
 
-    async def analyze_resume(self, session_id: str) -> dict:
-        """
-        End-to-end resume analysis using Document AI only:
-          - Layout parsing
-          - Section detection
-          - Formatting & ATS scoring
-        """
-        if not self.is_configured:
-            return {"error": "Service not configured"}
+    def _validate_config(self) -> bool:
+        """Validate all required configuration parameters"""
+        required_config = {
+            "GEMINI_API_KEY": settings.GEMINI_API_KEY,
+            "UPLOAD_FOLDER": settings.UPLOAD_FOLDER
+        }
+        
+        missing = [key for key, value in required_config.items() if not value]
+        if missing:
+            logger.error(f"Missing configuration: {', '.join(missing)}")
+            return False
+            
+        if not settings.UPLOAD_FOLDER.exists():
+            logger.error(f"Upload folder does not exist: {settings.UPLOAD_FOLDER}")
+            return False
+            
+        return True
 
-        # Cleanup old uploads
+    def _initialize_gemini(self):
+        """Initialize Gemini model"""
+        # Test connection to Gemini API
         try:
-            self._cleanup_old_uploads()
-        except Exception:
-            logger.exception("Cleanup failed")
+            self.model = genai.GenerativeModel('gemini-2.0-flash')
+            # Simple test to verify API is working
+            response = self.model.generate_content("Hello, test connection")
+            if not response:
+                raise ValueError("Could not connect to Gemini API")
+            logger.info("Successfully connected to Gemini API")
+        except Exception as e:
+            logger.error(f"Gemini API initialization failed: {str(e)}")
+            raise
 
-        # Locate resume file
-        supported = {
-            '.pdf': 'application/pdf',
-            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        }
-        file_path = None
-        mime = None
-        for ext, m in supported.items():
-            path = settings.UPLOAD_FOLDER / f"{session_id}_resume{ext}"
-            if path.is_file():
-                file_path, mime = path, m
-                break
-        if not file_path:
-            logger.warning("No resume found to analyze")
-            return {"error": "No resume uploaded"}
+    @tenacity_retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        reraise=True
+    )
+    async def analyze_resume(self, session_id: str) -> Dict:
+        """Main analysis workflow with enhanced error handling"""
+        try:
+            file_info = await self._locate_resume_file(session_id)
+            if not file_info:
+                return {"error": "No valid resume found"}
 
-        # 1) Parse layout via Document AI
-        layout = await asyncio.get_running_loop().run_in_executor(
-            None, self._process_layout, file_path, mime
-        )
+            # Add debug logging
+            logger.info(f"Processing file: {file_info['path']} (size: {file_info['size']} bytes, type: {file_info['mime_type']})")
+            
+            # Read the file and analyze with Gemini's multimodal capabilities
+            analysis = await self._analyze_resume_file(
+                file_path=file_info["path"], 
+                mime_type=file_info["mime_type"]
+            )
+            return analysis
+            
+        except Exception as e:
+            logger.error(f"Analysis failed: {str(e)}")
+            logger.error(traceback.format_exc())
+            return {"error": f"Analysis failed: {str(e)}"}
 
-        # 2) Build report with structural insights
-        report = {
-            "sections": self._identify_sections(layout),
-            "formatting": self._check_formatting(layout),
-            "ats_score": self._calculate_ats_score(layout)
-        }
-        return report
+    async def _locate_resume_file(self, session_id: str) -> Optional[Dict]:
+        """Find and validate resume file with enhanced checks"""
+        # Add debug logging of all files in the upload folder
+        try:
+            files_in_dir = list(settings.UPLOAD_FOLDER.iterdir())
+            logger.debug(f"Files in upload dir: {[f.name for f in files_in_dir]}")
+        except Exception as e:
+            logger.warning(f"Could not list directory contents: {str(e)}")
+        
+        for ext, mime_type in self.SUPPORTED_MIME_TYPES.items():
+            file_path = settings.UPLOAD_FOLDER / f"{session_id}_resume{ext}"
+            logger.debug(f"Checking for file: {file_path}")
+            
+            if not file_path.exists():
+                continue
+                
+            try:
+                file_size = file_path.stat().st_size
+                if file_size == 0:
+                    logger.warning(f"File exists but is empty: {file_path}")
+                    continue
+                    
+                if file_size > self.MAX_FILE_SIZE:
+                    logger.warning(f"File too large: {file_size} bytes")
+                    continue
+                
+                # Add more detailed logging
+                logger.info(f"Found valid resume: {file_path} ({file_size} bytes)")
+                
+                # Test file readability
+                with open(file_path, "rb") as f:
+                    test_read = f.read(100)  # Try to read first 100 bytes
+                    if not test_read:
+                        logger.warning(f"File exists but could not read content: {file_path}")
+                        continue
+                
+                return {
+                    "path": file_path,
+                    "mime_type": mime_type,
+                    "size": file_size
+                }
+            except OSError as e:
+                logger.warning(f"File access error: {str(e)}")
+                
+        logger.warning(f"No valid resume found for session {session_id}")
+        return None
 
-    def _process_layout(self, file_path: pathlib.Path, mime_type: str) -> dict:
-        """Call Document AI to extract text blocks and bounding boxes"""
-        with open(file_path, "rb") as f:
-            raw = documentai.RawDocument(content=f.read(), mime_type=mime_type)
-        request = documentai.ProcessRequest(name=self.processor_name, raw_document=raw)
-        result = self.client.process_document(request)
-        doc = result.document
+    async def _analyze_resume_file(self, file_path: pathlib.Path, mime_type: str) -> Dict:
+        """Analyze resume directly using Gemini's multimodal capabilities"""
+        try:
+            # Read file data
+            with open(file_path, "rb") as f:
+                file_data = f.read()
+            
+            # Encode the file as base64
+            base64_data = base64.b64encode(file_data).decode('utf-8')
+            logger.info(f"Base64 data length: {len(base64_data)} characters")
+            
+            # Define the analysis prompt
+            analysis_prompt = """
+            You are a professional resume analyzer. Please analyze this resume in detail and extract the following specific information:
 
-        layout = {"pages": []}
-        for page in doc.pages:
-            blocks = []
-            for blk in page.blocks:
-                blocks.append({
-                    "text": blk.layout.text_anchor.content,
-                    "bbox": [(v.x, v.y) for v in blk.layout.bounding_poly.vertices]
-                })
-            layout["pages"].append({"blocks": blocks})
-        return layout
+            1. Key skills and technologies (list them individually)
+            2. Years of experience (estimate based on work history)
+            3. Education details (including degrees, institutions, and years)
+            4. Work experience summary
+            5. Areas of expertise
+            6. An ATS compatibility score (0-100) based on formatting, keywords, and completeness
+            7. Three specific suggestions to improve this resume
+            
+            Format your response as a structured, detailed analysis under clear headings. Include all the information you can find, but don't invent details that aren't present in the resume.
+            """
+            
+            # Use executor to avoid blocking the event loop
+            return await asyncio.get_running_loop().run_in_executor(
+                None, 
+                self._run_multimodal_analysis, 
+                analysis_prompt, 
+                base64_data, 
+                mime_type
+            )
+            
+        except Exception as e:
+            logger.error(f"Resume file analysis failed: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise
+    
+    def _run_multimodal_analysis(self, prompt: str, base64_data: str, mime_type: str) -> Dict:
+        """Execute multimodal analysis with Gemini"""
+        try:
+            logger.info("Requesting resume analysis from Gemini...")
+            
+            # Create content parts for the multimodal request
+            content_parts = [
+                {"text": prompt},
+                {
+                    "inline_data": {
+                        "mime_type": mime_type,
+                        "data": base64_data
+                    }
+                }
+            ]
+            
+            # Configure generation parameters
+            generation_config = {
+                "temperature": 0.2,
+                "candidate_count": 1,
+                "max_output_tokens": 4096,
+                "top_p": 0.8,
+                "top_k": 40
+            }
+            
+            # Call Gemini with multimodal content
+            response = self.model.generate_content(
+                content_parts,
+                generation_config=generation_config
+            )
+            
+            if not response or not response.text:
+                raise ValueError("Empty response from Gemini API")
+                
+            resume_analysis = response.text
+            logger.info(f"Resume analysis complete (length: {len(resume_analysis)} chars)")
+            
+            # Return the narrative analysis
+            return {
+                "analysis": resume_analysis,
+                "format": "narrative"
+            }
+                
+        except Exception as e:
+            logger.error(f"Multimodal Gemini processing failed: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise
 
-    def _identify_sections(self, layout: dict, gap: float = 20.0) -> list:
-        """Detect section breaks by large vertical gaps between blocks"""
-        sections = []
-        for pi, pg in enumerate(layout["pages"]):
-            prev_y = None
-            for bi, blk in enumerate(pg["blocks"]):
-                y = blk["bbox"][0][1]
-                if prev_y is not None and y - prev_y > gap:
-                    sections.append({"page": pi, "block": bi})
-                prev_y = y
-        return sections
+    def _cleanup_old_uploads(self, max_age_hours: int = 24, max_files: int = 20):
+        """Improved cleanup with age-based removal"""
+        now = datetime.now()
+        deleted = 0
+        
+        for item in settings.UPLOAD_FOLDER.iterdir():
+            try:
+                item_age = datetime.fromtimestamp(item.stat().st_mtime)
+                if (now - item_age) > timedelta(hours=max_age_hours):
+                    if item.is_file():
+                        item.unlink()
+                        deleted += 1
+                    elif item.is_dir():
+                        shutil.rmtree(item)
+                        deleted += 1
+            except Exception as e:
+                logger.warning(f"Failed to delete {item}: {str(e)}")
+                
+        logger.info(f"Cleaned up {deleted} old files")
+        
+        # Fallback count-based cleanup if still too many files
+        remaining = list(settings.UPLOAD_FOLDER.iterdir())
+        if len(remaining) > max_files:
+            for item in remaining[:len(remaining)-max_files]:
+                try:
+                    item.unlink()
+                except Exception as e:
+                    logger.warning(f"Emergency cleanup failed for {item}: {str(e)}")
 
-    # def _check_formatting(self, layout: dict) -> dict:
-    #     """Stub: analyze text styles and font sizes (if available)"""
-    #     # Document AI v1 layout does not expose font_size by default
-    #     # Extend here if using custom processor
-    #     return {"consistent": True}
-
-    def _calculate_ats_score(self, layout: dict) -> int:
-        """Heuristic ATS scoring based on structure"""
-        score = 100
-        # e.g., penalize missing sections or overlapping blocks
-        # Add custom rules here
-        return max(0, score)
-
-    def _cleanup_old_uploads(self):
-        """Remove old files if uploads folder exceeds threshold"""
-        folder = settings.UPLOAD_FOLDER
-        if folder.exists() and folder.is_dir():
-            items = list(folder.iterdir())
-            if len(items) > 10:
-                for item in items:
-                    try:
-                        if item.is_file():
-                            item.unlink()
-                        else:
-                            shutil.rmtree(item)
-                    except Exception:
-                        pass
-                logger.info("Old uploads cleaned")
+    # Add a new method for manual document inspection
+    async def inspect_document(self, session_id: str) -> Dict:
+        """Inspect document without full processing for debugging"""
+        try:
+            file_info = await self._locate_resume_file(session_id)
+            if not file_info:
+                return {"error": "No valid resume found"}
+                
+            # Basic file metadata
+            result = {
+                "file_path": str(file_info["path"]),
+                "mime_type": file_info["mime_type"],
+                "size_bytes": file_info["size"],
+                "exists": file_info["path"].exists(),
+                "readable": os.access(file_info["path"], os.R_OK)
+            }
+            
+            # Try to read first few bytes
+            try:
+                with open(file_info["path"], "rb") as f:
+                    header = f.read(50)
+                    result["header_hex"] = header.hex()
+                    result["header_ascii"] = ''.join(chr(b) if 32 <= b < 127 else '.' for b in header)
+            except Exception as e:
+                result["read_error"] = str(e)
+                
+            return result
+            
+        except Exception as e:
+            logger.error(f"Document inspection failed: {str(e)}")
+            return {"error": f"Inspection failed: {str(e)}"}

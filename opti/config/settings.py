@@ -53,6 +53,8 @@ DEFAULT_TTS_VOICE = "nova"
 DEFAULT_LLM_MODEL = "gemini-2.0-flash"
 DEFAULT_LLM_TEMPERATURE = 0.8
 
+GEMINI_API_KEY= os.getenv("GEMINI_API_KEY")
+GCP_CREDENTIALS_PATH=r"D:\prepzo\prepzo-backend\flask-prepzo-backend\opti\cred.json"
 # Server settings
 FLASK_SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "a_default_secret_key_for_development")
 PAGE_PASSWORDS = os.getenv("PAGE_PASSWORDS", "password123").split(",")
