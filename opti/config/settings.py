@@ -1,0 +1,81 @@
+"""
+Centralized configuration settings loaded from environment variables
+"""
+import os
+import logging
+import pathlib
+from dotenv import load_dotenv
+import importlib.metadata
+
+# Load environment variables
+load_dotenv()
+
+# Configure logging
+logger = logging.getLogger("settings")
+logger.setLevel(logging.INFO)
+
+# Get package version
+try:
+    from .. import __version__
+except ImportError:
+    __version__ = "0.0.0"
+
+# Base paths
+ROOT_DIR = pathlib.Path(__file__).parent.parent.parent
+UPLOAD_FOLDER = ROOT_DIR / 'uploads'
+
+# API Keys
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+# LiveKit settings
+LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
+LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET")
+
+# Supabase settings
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+# Pinecone settings
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+PINECONE_REGION = os.getenv("PINECONE_REGION")
+PINECONE_INDEX_NAME = "coachingbooks"
+
+# Google Document AI settings
+GOOGLE_PROJECT_ID = os.getenv("GOOGLE_PROJECT_ID")
+DOCAI_LOCATION = os.getenv("DOCAI_LOCATION")
+DOCAI_LAYOUT_PROCESSOR_ID = os.getenv("DOCAI_LAYOUT_PROCESSOR_ID")
+
+# AI Model settings
+DEFAULT_TTS_MODEL = "gpt-4o-mini-tts"
+DEFAULT_TTS_VOICE = "nova"
+DEFAULT_LLM_MODEL = "gemini-2.0-flash"
+DEFAULT_LLM_TEMPERATURE = 0.8
+
+# Server settings
+FLASK_SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "a_default_secret_key_for_development")
+PAGE_PASSWORDS = os.getenv("PAGE_PASSWORDS", "password123").split(",")
+APP_ENV = os.getenv("APP_ENV", "production").lower()
+
+# Function to validate critical settings
+def validate_settings():
+    missing = []
+    
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        missing.append("Supabase credentials (SUPABASE_URL, SUPABASE_KEY)")
+    
+    if not PINECONE_API_KEY or not PINECONE_REGION:
+        missing.append("Pinecone credentials (PINECONE_API_KEY, PINECONE_REGION)")
+    
+    if not OPENAI_API_KEY:
+        missing.append("OpenAI API key (OPENAI_API_KEY)")
+        
+    if not LIVEKIT_API_KEY or not LIVEKIT_API_SECRET:
+        missing.append("LiveKit credentials (LIVEKIT_API_KEY, LIVEKIT_API_SECRET)")
+    
+    if missing:
+        logger.warning(f"Missing critical configuration: {', '.join(missing)}")
+        return False
+    
+    return True 
