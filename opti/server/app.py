@@ -62,7 +62,7 @@ def health_check():
     }), 200
 
 # Authentication check endpoint
-@app.route("/check-auth", methods=['GET'])
+@app.route("/api/check-auth", methods=['GET'])
 def check_auth():
     # Bypass auth check in development environment
     if APP_ENV == 'development':
@@ -74,7 +74,7 @@ def check_auth():
         return jsonify({"authenticated": False}), 401
 
 # Password verification endpoint
-@app.route("/verify-password", methods=['POST'])
+@app.route("/api/verify-password", methods=['POST'])
 def verify_password():
     # Bypass password verification in development environment
     if APP_ENV == 'development':

@@ -76,23 +76,52 @@ class ResumeTools:
     @function_tool()
     async def request_resume(self) -> str:
         """Triggers resume collection flow using LiveKit data channels"""
+        # Log function entry
+        logger.info(f"Entering request_resume for room '{self.room_name}'")
+        
         try:
+            # Log before getting context
+            logger.info(f"Attempting to get job context for room '{self.room_name}'")
             context = get_job_context()
+            # Log after getting context
+            logger.info(f"Successfully got job context for room '{self.room_name}'")
+
+            # Log before getting room
+            logger.info(f"Attempting to get room from context for room '{self.room_name}'")
             room = context.room
+            # Log after getting room
+            logger.info(f"Successfully got room from context for room '{self.room_name}'")
         
-        # Send request to frontend
-            await room.local_participant.publish_data(
-                payload=json.dumps({
-                    "action": "request_resume",
-                    "message": "Please upload your resume to continue"
-                }).encode("utf-8"),
-                reliable=True,
-                topic="resume_request"
-            )
-        
-        # Wait for response with timeout
+            # Prepare payload
+            payload = json.dumps({
+                "action": "request_resume",
+                "message": "Please upload your resume to continue"
+            }).encode("utf-8")
+            topic = "resume_request"
+            
+            # Log before publishing
+            logger.info(f"Attempting to publish data on topic '{topic}' for room '{self.room_name}'")
+
+            # Send request to frontend
             try:
+                await room.local_participant.publish_data(
+                    payload=payload,
+                    reliable=True,
+                    topic=topic
+                )
+                # Log after successful publishing
+                logger.info(f"Successfully published data on topic '{topic}' for room '{self.room_name}'")
+            except Exception as pub_err:
+                # Log publishing error
+                logger.error(f"Error publishing data on topic '{topic}' for room '{self.room_name}': {pub_err}", exc_info=True)
+                raise ToolError(f"Failed to send resume request: {pub_err}")
+        
+            # Wait for response with timeout (Currently commented out - keep as is)
+            try:
+                # Log before getting participant (though this part is inactive)
+                logger.debug(f"Attempting to get participant iterator for room '{self.room_name}' (wait logic inactive)")
                 participant = next(iter(room.remote_participants.values()))
+                logger.debug(f"Got participant for room '{self.room_name}' (wait logic inactive)")
                 # response = await participant.wait_for_data(
                 #     topic="resume_response",
                 #     timeout=120.0  # Longer timeout for file upload
@@ -100,12 +129,30 @@ class ResumeTools:
                 # resume_data = json.loads(response.value)
                 # return f"Resume received: {resume_data.get('filename')}"
             
+            except StopIteration:
+                logger.warning(f"No remote participants found for room '{self.room_name}' when checking for resume response (wait logic inactive).")
+                # This isn't necessarily an error if we aren't waiting, but good to know.
             except TimeoutError:
-                raise ToolError("Resume upload timed out")
+                # This block shouldn't be reached as wait_for_data is commented out
+                logger.warning(f"Timeout waiting for resume response on topic 'resume_response' for room '{self.room_name}'")
+                # If we decide to re-enable waiting, this should raise ToolError
+                # raise ToolError("Resume upload timed out") 
+                # For now, just return a neutral message as the publish succeeded
+                # but the wait part is not active.
+                # Return statement moved down to ensure it's reached after successful publish
+                # return "Resume request sent. Waiting logic currently inactive."
             
+            # If we reach here without an error (and without waiting timeout), 
+            # it implies publish was successful but we didn't wait for a reply.
+            logger.info(f"Exiting request_resume successfully for room '{self.room_name}' (publish succeeded, no wait)")
+            return "Resume request sent successfully." # Return statement consolidated here
+
         except Exception as e:
-            logger.error(f"Resume request failed: {str(e)}")
-            raise ToolError("Could not complete resume request")
+            # Catch other potential errors (like getting context/room)
+            logger.error(f"Error in request_resume tool for room '{self.room_name}': {str(e)}", exc_info=True)
+            # Log function exit due to error
+            logger.info(f"Exiting request_resume due to error for room '{self.room_name}'")
+            raise ToolError("Could not complete resume request due to an internal error.")
 
 
    
