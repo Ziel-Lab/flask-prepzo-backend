@@ -5,7 +5,7 @@ import logging
 from flask import Flask, jsonify, request, session, redirect, abort
 from flask_cors import CORS
 from asgiref.wsgi import WsgiToAsgi
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
 import aiofiles
 from dotenv import load_dotenv
 from livekit import api
@@ -65,8 +65,8 @@ def require_internal_api_key(f):
 # Initialize Flask app
 app = Flask(__name__)
 
-# Configure CORS
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+FRONTEND_ORIGIN = os.environ.get('FRONTEND_ORIGIN', 'http://localhost:3000')
+CORS(app, origins=[FRONTEND_ORIGIN], supports_credentials=True)
 
 # Session Configuration
 app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'a_default_secret_key_for_development') 
@@ -126,7 +126,7 @@ def check_auth():
         password_verified_at = session.get('password_verified_at')
         if password_verified_at:
             if isinstance(password_verified_at, datetime):
-                time_since_verified = datetime.utcnow() - password_verified_at
+                time_since_verified = datetime.now(timezone.utc) - password_verified_at
                 session_lifetime = app.config.get('PERMANENT_SESSION_LIFETIME', timedelta(minutes=30))
                 if time_since_verified < session_lifetime:
                     password_recently_verified = True
@@ -158,7 +158,7 @@ def check_auth():
 def verify_password():
     # Bypass password verification in development environment
     if APP_ENV == 'development':
-        session['password_verified_at'] = datetime.utcnow() # Store timestamp
+        session['password_verified_at'] = datetime.now(timezone.utc) # Store aware UTC timestamp
         session.permanent = True
         return jsonify({"message": "Authentication successful (dev mode)"}), 200
 
@@ -169,7 +169,7 @@ def verify_password():
     submitted_password = data['password']
     # Check if the submitted password is in the set of valid passwords
     if submitted_password in VALID_PASSWORDS:
-        session['password_verified_at'] = datetime.utcnow() # Store timestamp
+        session['password_verified_at'] = datetime.now(timezone.utc) # Store aware UTC timestamp
         session.permanent = True # Use the configured session lifetime
         logger.info("Password verified successfully, timestamp stored in session.")
         return jsonify({"message": "Authentication successful"}), 200
