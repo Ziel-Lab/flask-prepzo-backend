@@ -78,9 +78,7 @@ class PrepzoAgent(Agent):
         Returns:
             AsyncIterable[llm.ChatChunk]: Stream of chat chunks
         """
-        # Removed faulty logging block
-            
-        # Process the LLM stream and log tool call requests
+        # Process the LLM stream 
         llm_stream = Agent.default.llm_node(self, chat_ctx, tools, model_settings)
         
         chunk_index = 0 
@@ -113,22 +111,32 @@ class PrepzoAgent(Agent):
                                 "content": "Manually triggered request_resume based on LLM phrase."
                             })
                             
-                            # **** ADDED: Manually generate the desired verbal response ****
-                            logger.info("Manually generating verbal confirmation for resume request.")
-                            await self.session.say(text="Okay, please upload your resume now.")
-                            logger.info("Completed manual generation of verbal confirmation.")
-                            # **** END ADDED ****
+                            # Manually generate the desired verbal response using self.session.say
+                            logger.info("Attempting manual speech via self.session.say().")
+                            await self.session.say(text="Okay, to help with that, please upload your resume using the prompt. Let me know once you've uploaded it.")
+                            logger.info("Completed self.session.say() call.")
                             
                         except Exception as tool_err:
-                            logger.error(f"Error manually calling request_resume or generating speech: {tool_err}")
+                            logger.error(f"Error manually calling request_resume or generating speech: {tool_err}", exc_info=True)
                         # Buffer is implicitly discarded as we won't yield anything further this turn
             
+            # Log tool calls if they appear (standard behavior, might be redundant now but keep for debug)
+            if hasattr(chunk, 'delta') and hasattr(chunk.delta, 'tool_calls') and chunk.delta.tool_calls:
+                try:
+                    tool_calls_str = str(chunk.delta.tool_calls)
+                    logger.info(f"LLM generated tool_calls chunk: {tool_calls_str}")
+                    self.conversation_manager.add_message({
+                        "role": "llm_tool_call_generated", 
+                        "content": tool_calls_str
+                    })
+                    logger.info("Logged LLM tool_call chunk to ConversationManager")
+                except Exception as log_err:
+                    logger.error(f"Error logging tool_calls chunk: {log_err}")
+
             # Only yield chunks if suppression is NOT active for this turn
             if not suppress_output_this_turn:
                  yield chunk
-            # else: # Optional: Log suppression
-                # logger.debug(f"LLM Chunk [{chunk_index}] suppressed.")
-
+                 
             chunk_index += 1
 
         # Enhanced logging specifically for tool_calls attribute
