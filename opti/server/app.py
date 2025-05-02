@@ -1,6 +1,3 @@
-"""
-Flask server implementation for Prepzo backend
-"""
 import os
 import uuid
 import pathlib
