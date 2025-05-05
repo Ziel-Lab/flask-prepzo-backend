@@ -24,7 +24,7 @@ logger = logging.getLogger("summary-agent")
 app = Flask(__name__)
 
 # Initialize Supabase client
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
 
 # Email template HTML with PrepZo colors
 EMAIL_TEMPLATE = """<!DOCTYPE html>
@@ -305,7 +305,7 @@ def generate_summary(conversation):
             for msg in conversation if msg.get("content")
         )
         prompt = (
-            "Summarize this conversation into 3-5 key bullet points. "
+            "Summarize this conversation into 5-10 key bullet points. "
             "Keep it concise and professional. Here is the conversation:\n\n"
             f"{formatted_conv}"
         )
