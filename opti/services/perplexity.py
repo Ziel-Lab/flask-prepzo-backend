@@ -1,6 +1,3 @@
-"""
-Perplexity API service for web search functionality
-"""
 import traceback
 from openai import OpenAI
 from ..config import settings

@@ -1,6 +1,3 @@
-"""
-Email-related tools for the agent to interact with user emails
-"""
 from livekit.agents import function_tool, get_job_context,ToolError
 from typing import Annotated
 from ..data.supabase_client import SupabaseEmailClient

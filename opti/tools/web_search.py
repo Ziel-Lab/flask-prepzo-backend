@@ -1,6 +1,3 @@
-"""
-Web search tools using Perplexity API
-"""
 from livekit.agents import function_tool
 from typing import Annotated
 from ..services.perplexity import PerplexityService

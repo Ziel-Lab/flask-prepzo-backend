@@ -210,6 +210,7 @@ async def get_token():
 # Resume processing endpoint
 @app.route("/api/process-resume", methods=['POST'])
 @require_internal_api_key
+# @require_password_auth # Removed - Page auth handled by frontend
 def process_resume():
     """Receives resume data, requires internal API key auth."""
     logger.info(f"process-resume endpoint accessed with valid internal API key.")

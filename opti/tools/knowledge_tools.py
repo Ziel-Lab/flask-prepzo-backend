@@ -1,6 +1,3 @@
-"""
-Knowledge base search tools using Pinecone
-"""
 from livekit.agents import function_tool
 from typing import Annotated
 from ..services.pinecone_service import PineconeService

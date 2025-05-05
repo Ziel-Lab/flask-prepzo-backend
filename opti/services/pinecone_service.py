@@ -1,6 +1,3 @@
-"""
-Pinecone vector database service for knowledge retrieval
-"""
 import asyncio
 import traceback
 from typing import List

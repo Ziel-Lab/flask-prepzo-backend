@@ -1,6 +1,3 @@
-"""
-Main agent implementation for Prepzo
-"""
 from typing import AsyncIterable
 import logging
 import traceback

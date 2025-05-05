@@ -1,6 +1,3 @@
-"""
-Agent session implementation for Prepzo
-"""
 import asyncio
 import traceback
 import logging
