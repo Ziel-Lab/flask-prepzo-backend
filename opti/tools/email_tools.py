@@ -3,6 +3,12 @@ from typing import Annotated
 from ..data.supabase_client import SupabaseEmailClient
 from ..utils.logging_config import setup_logger
 import json
+import smtplib
+import re
+import os
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from datetime import datetime
 
 # Use centralized logger
 logger = setup_logger("email-tools")
@@ -66,20 +72,6 @@ class EmailTools:
             self._log_tool_result(f"get_user_email error: {str(e)}")
             return ""
             
-    # @function_tool()
-    # async def request_email(self) -> str:
-    #     """Signal frontend to show email form and provide user instructions"""
-    #     try:
-    #         await self.set_agent_state("email_requested")
-    #         result = "Please provide your email address in the form that just appeared below."
-    #         self._log_tool_result(result)
-    #         return result
-    #     except Exception as e:
-    #         error_msg = "There was an issue requesting your email. Please let me know your email address directly."
-    #         logger.error(f"Failed to request email: {str(e)}")
-    #         self._log_tool_result(error_msg)
-    #         return error_msg
-    # raise ToolError("Could not complete email request")
 
     @function_tool()
     async def request_email(self) -> str:
@@ -121,3 +113,92 @@ class EmailTools:
             error_msg = f"Internal error setting agent state: {str(e)}"
             self._log_tool_result(error_msg)
             return f"I encountered an internal issue updating my state." 
+
+    @function_tool(
+        name="send_email",
+        description="Send an email with the specified subject and message to a recipient.",  
+    )
+    async def send_email(
+        self,
+        recipient_email: str,
+        subject: str,
+        message_body: str,
+    ) -> str:
+        """
+        Send an email with the specified subject and message to a recipient.
+        
+        Args:
+            recipient_email (str): Email address of the recipient
+            subject (str): Subject of the email
+            message_body (str): Body content of the email
+            
+        Returns:
+            str: Status message indicating success or failure
+        """
+        try:
+            # Validate email format
+            if not re.match(r"[^@]+@[^@]+\.[^@]+", recipient_email):
+                error_msg = "The email address seems incorrect. Please provide a valid one."
+                self._log_tool_result(error_msg)
+                return error_msg
+                
+            # Get SMTP settings from environment variables
+            sender_email = os.getenv("SENDER_EMAIL", "your-email@example.com")
+            smtp_server = os.getenv("SMTP_SERVER", "smtp.example.com")
+            smtp_port = int(os.getenv("SMTP_PORT", "587"))
+            smtp_password = os.getenv("SMTP_PASSWORD", "your-smtp-password")
+            
+            # Create the email
+            msg = MIMEMultipart()
+            msg["From"] = sender_email
+            msg["To"] = recipient_email
+            msg["Subject"] = subject
+            msg.attach(MIMEText(message_body, "plain"))
+            
+            # Prepare log data
+            log_data = {
+                "session_id": self.room_name,
+                "email": sender_email,
+                "user_email": recipient_email,
+                "subject": subject,
+                "html_content": message_body,
+                "status": "pending",
+                "timestamp": datetime.now().isoformat(),
+                "email_sent": False,
+            }
+            
+            # Log the email attempt
+            # log_id = await self.supabase.create_email_log(log_data)
+            
+            # Send the email
+            server = smtplib.SMTP(smtp_server, smtp_port)
+            server.starttls()
+            server.login(sender_email, smtp_password)
+            server.sendmail(sender_email, recipient_email, msg.as_string())
+            server.quit()
+            
+            # Update log with success
+            # await self.supabase.update_email_log(log_id, {
+            #     "status": "sent",
+            #     "email_sent": True,
+            #     "updated_at": datetime.now().isoformat()
+            # })
+            
+            result = f"Email sent successfully to {recipient_email}."
+            # self._log_tool_result(result)
+            return result
+            
+        except Exception as e:
+            error_message = f"Error sending email: {str(e)}"
+            logger.error(error_message)
+            
+            # Update log with error if log_id exists
+            # if 'log_id' in locals():
+            #     await self.supabase.update_email_log(log_id, {
+            #         "status": "failed",
+            #         "error": error_message,
+            #         "updated_at": datetime.now().isoformat()
+            #     })
+            
+            # self._log_tool_result(error_message)
+            return "There was an error sending your email. Please try again later." 
