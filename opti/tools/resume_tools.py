@@ -147,32 +147,3 @@ class ResumeTools:
             logger.error(f"Resume analysis error: {e}", exc_info=True)
             self._log_tool_result(error_msg)
             return error_msg
-
-
-
-
-
-
-    @function_tool()
-    async def set_agent_state(self, state: str) -> str:
-        """
-        Update the agent state marker that the frontend listens for
-        
-        Args:
-            state (str): The new state to set
-            
-        Returns:
-            str: Confirmation message
-        """
-        try:
-            # This is used by frontend to update UI state
-            self.agent_state = state
-            logger.info(f"Agent state set to: {state[:50]}..." if len(state) > 50 else f"Agent state set to: {state}")
-            result = f"Agent state updated."
-            self._log_tool_result(result)
-            return result
-        except Exception as e:
-            logger.error(f"Error setting agent state: {str(e)}")
-            error_msg = f"Internal error setting agent state: {str(e)}"
-            self._log_tool_result(error_msg)
-            return f"I encountered an internal issue updating my state." 

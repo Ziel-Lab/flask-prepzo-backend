@@ -1,6 +1,3 @@
-"""
-Supabase database client for user data management
-"""
 from supabase import create_client, Client
 from typing import Optional
 import logging

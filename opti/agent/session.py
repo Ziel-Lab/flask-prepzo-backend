@@ -14,7 +14,6 @@ from .agent import PrepzoAgent
 from ..data.conversation_manager import ConversationManager
 from ..config import settings
 from ..utils.logging_config import setup_logger
-from ..prompts.agent_prompts import WELCOME_MESSAGE
 
 # Use centralized logger
 logger = setup_logger("agent-session")
@@ -79,9 +78,6 @@ async def initialize_session(ctx: JobContext):
         await session.start(room=ctx.room, agent=agent, room_input_options=input_options)
         logger.info(f"AgentSession started for room {ctx.room.name}")
 
-        # Send welcome message
-        logger.info("Generating initial welcome message")
-        await session.say(text=WELCOME_MESSAGE)
 
     except Exception as e:
         logger.error(f"Error in agent session: {str(e)}")

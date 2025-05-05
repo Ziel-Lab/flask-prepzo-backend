@@ -1,5 +1,5 @@
 import traceback
-from openai import OpenAI
+from openai import AsyncOpenAI
 from ..config import settings
 from ..utils.logging_config import setup_logger
 
@@ -17,7 +17,7 @@ class PerplexityService:
                 logger.warning("Missing PERPLEXITY_API_KEY environment variable. Web search will not work.")
                 self.client = None
             else:
-                self.client = OpenAI(api_key=api_key, base_url="https://api.perplexity.ai")
+                self.client = AsyncOpenAI(api_key=api_key, base_url="https://api.perplexity.ai")
                 logger.info("PerplexityService initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize PerplexityService: {e}")
@@ -46,7 +46,7 @@ class PerplexityService:
             logger.info(f"Sending web search request to Perplexity model: {model_name}")
             logger.info(f"Query: {query}")
             
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=model_name,
                 messages=messages,
             )

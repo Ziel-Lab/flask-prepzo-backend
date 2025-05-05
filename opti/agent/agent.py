@@ -144,10 +144,5 @@ class PrepzoAgent(Agent):
                 logger.info(f"LLM Chunk [{chunk_index}] - tool_calls type: {type(tool_calls_obj)}")
                 logger.info(f"LLM Chunk [{chunk_index}] - tool_calls content: {str(tool_calls_obj)}")
                 
-                # Optional: Log to conversation manager if needed
-                # self.conversation_manager.add_message({
-                #     "role": "tool_call_debug", 
-                #     "content": f"Type: {type(tool_calls_obj)}, Content: {str(tool_calls_obj)}"
-                # })
             except Exception as tool_log_err:
                  logger.error(f"Error logging tool_calls details for chunk [{chunk_index}]: {tool_log_err}") 

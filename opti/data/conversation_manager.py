@@ -1,6 +1,3 @@
-"""
-Manages conversation state and persistence to database
-"""
 import asyncio
 import traceback
 import json
