@@ -9,6 +9,9 @@ import os
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Use centralized logger
 logger = setup_logger("email-tools")
@@ -134,8 +137,8 @@ class EmailTools:
             # Prepare log data
             log_data = {
                 "session_id": self.room_name,
-                "email": sender_email,
-                "user_email": recipient_email,
+                # "email": sender_email,
+                "email": recipient_email,
                 "subject": subject,
                 "html_content": message_body,
                 "status": "pending",
@@ -144,8 +147,8 @@ class EmailTools:
             }
             
             # Log the email attempt
-            # log_id = await self.supabase.create_email_log(log_data)
-            
+            log_id = self.supabase.create_email_log(log_data)
+            logger.info(f"Attempting to send email to: {recipient_email} with subject: {subject}")
             # Send the email
             server = smtplib.SMTP(smtp_server, smtp_port)
             server.starttls()
@@ -154,14 +157,14 @@ class EmailTools:
             server.quit()
             
             # Update log with success
-            # await self.supabase.update_email_log(log_id, {
-            #     "status": "sent",
-            #     "email_sent": True,
-            #     "updated_at": datetime.now().isoformat()
-            # })
+            self.supabase.update_email_log(log_id, {
+                "status": "sent",
+                "email_sent": True,
+                "updated_at": datetime.now().isoformat()
+            })
             
             result = f"Email sent successfully to {recipient_email}."
-            # self._log_tool_result(result)
+            self._log_tool_result(result)
             return result
             
         except Exception as e:
@@ -169,12 +172,12 @@ class EmailTools:
             logger.error(error_message)
             
             # Update log with error if log_id exists
-            # if 'log_id' in locals():
-            #     await self.supabase.update_email_log(log_id, {
-            #         "status": "failed",
-            #         "error": error_message,
-            #         "updated_at": datetime.now().isoformat()
-            #     })
+            if 'log_id' in locals():
+                self.supabase.update_email_log(log_id, {
+                    "status": "failed",
+                    "error": error_message,
+                    "updated_at": datetime.now().isoformat()
+                })
             
-            # self._log_tool_result(error_message)
+            self._log_tool_result(error_message)
             return "There was an error sending your email. Please try again later." 

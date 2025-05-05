@@ -47,6 +47,7 @@ class PrepzoAgent(Agent):
         tools = [
             self.email_tools.get_user_email,
             self.email_tools.request_email,
+            self.email_tools.send_email,
             self.web_search_tools.web_search,
             self.knowledge_tools.search_knowledge_base,
             self.resume_tools.request_resume,

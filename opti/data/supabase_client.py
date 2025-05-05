@@ -82,3 +82,44 @@ class SupabaseEmailClient:
             logger.error(f"Error storing user email: {str(e)}")
             logger.error(traceback.format_exc())
             raise 
+    
+    async def create_email_log(self, log_data):
+        """
+        Create a new email log entry in the database
+        
+        Args:
+            log_data (dict): The email log data to insert
+            
+        Returns:
+            str: The ID of the newly created log entry
+        """
+        try:
+            response =  self.client.table('email_logs').insert(log_data).execute()
+            if response.data and len(response.data) > 0:
+                log_id = response.data[0].get('id')
+                return log_id
+            return None
+        except Exception as e:
+            logger.error(f"Failed to create email log: {str(e)}")
+            return None
+            
+    async def update_email_log(self, log_id, update_data):
+        """
+        Update an existing email log entry
+        
+        Args:
+            log_id (str): The ID of the log entry to update
+            update_data (dict): The data to update
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            if not log_id:
+                return False
+                
+            self.client.table('email_logs').update(update_data).eq('id', log_id).execute()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update email log {log_id}: {str(e)}")
+            return False 
