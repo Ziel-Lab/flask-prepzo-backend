@@ -1,88 +1,166 @@
-# Coach Backend
+# Prepzo Backend - Modular Structure
 
-This project is a Python-based backend for a LiveKit-powered voice AI interview assistant. It comprises a LiveKit agent (which listens for participants and handles voice interactions) and a token server (which generates JWT tokens for clients to join LiveKit rooms).
+This folder contains the modular implementation of the Prepzo coaching assistant. The code has been refactored to follow a more organized and maintainable structure.
 
-**Prerequisites:**  
-- Python 3.9+ (tested with Python 3.12.4)  
-- Docker (for containerization)  
-- A LiveKit server with valid API credentials
+## Directory Structure
 
----
+```
+opti/
+├── __init__.py              # Package initialization
+├── __main__.py              # Entry point to run all processes
+├── main.py                  # Main entry point for agent only
+├── runner.py                # Process orchestration for server and agent
+├── migration.py             # Migration utility from legacy structure
+├── knowledgebase.py         # Legacy compatibility module
+├── run_backend.py           # Compatibility wrapper for run_backend.py
+├── README.md                # This documentation
+├── agent/                   # Agent implementation
+│   ├── __init__.py
+│   ├── __main__.py          # Entry point to run agent directly
+│   ├── agent.py             # Agent class implementation
+│   └── session.py           # Agent session management
+├── config/                  # Configuration management
+│   ├── __init__.py
+│   └── settings.py          # Centralized settings module
+├── data/                    # Data management
+│   ├── __init__.py
+│   ├── conversation_manager.py  # Conversation persistence
+│   └── supabase_client.py   # Database client
+├── prompts/                 # Prompt management
+│   ├── __init__.py
+│   └── agent_prompts.py     # System prompts for agent
+├── server/                  # Server implementation
+│   ├── __init__.py
+│   ├── __main__.py          # Entry point to run server directly
+│   └── app.py               # Flask server implementation
+├── services/                # External service integrations
+│   ├── __init__.py
+│   ├── docai.py             # Document AI service
+│   ├── perplexity.py        # Perplexity web search API
+│   └── pinecone_service.py  # Pinecone vector database service
+├── tools/                   # Agent tool implementations
+│   ├── __init__.py
+│   ├── email_tools.py       # Email-related tools
+│   ├── knowledge_tools.py   # Knowledge base search tools
+│   ├── resume_tools.py      # Resume processing tools
+│   └── web_search.py        # Web search tools
+└── utils/                   # Utility modules
+    ├── __init__.py
+    └── logging_config.py    # Centralized logging configuration
+```
 
-**Setup & Running:**
+## Benefits of Modular Structure
 
-1. **Clone & Setup Environment:**  
-   - **Clone the Repository:**
-     ```bash
-     git clone https://github.com/KirtiPriya07/coach_backend.git
-     cd coach_backend
-     ```
-   - **Create and Activate a Virtual Environment:**
-     ```bash
-     python -m venv env
-     # Windows:
-     .\env\Scripts\activate
-     # macOS/Linux:
-     source env/bin/activate
-     ```
-   - **Install Dependencies:**
-     ```bash
-     pip install -r requirements.txt
-     ```
-   - **Configure Environment Variables:**  
-     Create a `.env` file in the project root with:
-     ```dotenv
-     LIVEKIT_API_KEY=your_livekit_api_key
-     LIVEKIT_API_SECRET=your_livekit_api_secret
-     LIVEKIT_URL=wss://your-livekit-server/agent
-     OPENAI_API_KEY=your_key
-     DEEPGRAM_API_KEY = your_key
-     CARTESIA_API_KEY= your_key
-     ```
+1. **Improved organization**: Code is logically grouped by functionality
+2. **Better separation of concerns**: Each module has a clear responsibility
+3. **Enhanced maintainability**: Easier to update or replace specific components
+4. **Reduced duplicate code**: Common functionality is centralized
+5. **Simplified testing**: Modules can be tested independently
+6. **Easier onboarding**: New developers can understand the system more quickly
 
-2. **Running Locally:**  
-   - **Run the LiveKit Agent (Development Mode):**
-     ```bash
-     python agent.py dev
-     ```
-     This command starts the agent that waits for participants and handles voice interactions.
-   - **(Optional) Run the Token Server Separately (Flask):**
-     ```bash
-     python server.py
-     ```
-     (Note: The token server runs on port 5001.)
+## Different Ways to Run the Application
 
-3. **Docker Deployment:**  
-   - **Create a Dockerfile** in the project root with the following content:
-     ```dockerfile
-     FROM python:3.12.4
-     ENV PYTHONUNBUFFERED=1
-     WORKDIR /app
-     COPY requirements.txt .
-     RUN pip install --no-cache-dir -r requirements.txt
-     COPY . .
-     EXPOSE 5001
-     CMD ["python", "agent.py", "dev"]
-     ```
-   - **Build the Docker Image:**
-     ```bash
-     docker build -t coach-backend .
-     ```
-   - **Run the Docker Container:**
-     ```bash
-     docker run -p 5001:5001 coach-backend
-     ```
-     This maps port 5001 of the container to port 5001 on your host machine.
+You have several options to run the application:
 
----
+1. **Run both server and agent processes** (recommended):
+   ```bash
+   python run_prepzo.py
+   ```
+   or
+   ```bash
+   python -m opti
+   ```
 
-**Troubleshooting:**  
-- Ensure your `.env` file is correctly configured and accessible.  
-- Verify that `LIVEKIT_URL` is correct and reachable from your environment.  
-- Confirm Docker is installed and running (check with `docker --version`).
+2. **Run the server and agent separately**:
+   ```bash
+   # Terminal 1 - Run server
+   python -m opti.server
 
-**Contributing:**  
-Feel free to open issues or submit pull requests with improvements or bug fixes.
+   # Terminal 2 - Run agent
+   python -m opti.agent start
+   ```
 
-**License:**  
-This project is licensed under the [MIT License](LICENSE).
+3. **For backward compatibility**:
+   ```bash
+   # Using the compatibility wrapper
+   python run_backend.py
+   ```
+
+## Migration from Legacy Structure
+
+To migrate from the old structure to the new modular structure, run:
+
+```bash
+python -m opti.migration --backup
+```
+
+This will:
+1. Create a backup of your legacy files (with `--backup`)
+2. Update import statements in your existing code
+3. Create compatibility wrappers for server.py and run_backend.py
+4. Create a new `run_prepzo.py` entry point
+
+## Core Components
+
+### Server Implementation
+
+The server is implemented as a Flask application with the following components:
+- `app.py`: Defines the Flask application with all routes and ASGI compatibility
+- `__main__.py`: Provides a direct entry point for running the server independently
+
+### Process Orchestration
+
+The `runner.py` module handles running both server and agent processes:
+- Starts the server using uvicorn
+- Starts the agent process
+- Sets up signal handlers for graceful termination
+- Waits for both processes to complete
+
+### Agent Implementation
+
+The agent implementation is divided into two main components:
+- `agent.py`: Defines the `PrepzoAgent` class that extends the LiveKit `Agent`
+- `session.py`: Manages the agent session lifecycle and event handling
+
+### Data Management
+
+- `conversation_manager.py`: Handles conversation persistence to Supabase
+- `supabase_client.py`: Provides a client for Supabase data operations
+
+### Services
+
+- `docai.py`: Google Document AI service for resume parsing
+- `perplexity.py`: Perplexity API service for web search
+- `pinecone_service.py`: Pinecone vector database service for knowledge retrieval
+
+### Tools
+
+The tools are organized into functional modules:
+- `email_tools.py`: Tools for email-related operations
+- `knowledge_tools.py`: Tools for searching the knowledge base
+- `resume_tools.py`: Tools for resume uploading and analysis
+- `web_search.py`: Tools for web searching
+
+### Configuration
+
+Settings are centralized in the `config/settings.py` module, which loads values from environment variables and provides validation functions.
+
+### Utilities
+
+Shared utilities like logging configuration are in the `utils` directory.
+
+## Backward Compatibility
+
+For backward compatibility with the legacy structure:
+- `knowledgebase.py` provides a bridge to the new modules
+- `run_backend.py` maintains the same entry point but uses the new runner
+- `server.py` is updated to reference the new server implementation
+
+## Getting Started
+
+To use the modular structure in a new project:
+
+1. Copy the `opti` directory to your project
+2. Copy `run_prepzo.py` to your project root
+3. Set up the required environment variables (see `config/settings.py`)
+4. Run the application with `python run_prepzo.py` 
