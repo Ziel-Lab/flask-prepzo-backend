@@ -147,7 +147,7 @@ class EmailTools:
             }
             
             # Log the email attempt
-            log_id = self.supabase.create_email_log(log_data)
+            log_id = await self.supabase.create_email_log(log_data)
             logger.info(f"Attempting to send email to: {recipient_email} with subject: {subject}")
             # Send the email
             server = smtplib.SMTP(smtp_server, smtp_port)
@@ -157,7 +157,7 @@ class EmailTools:
             server.quit()
             
             # Update log with success
-            self.supabase.update_email_log(log_id, {
+            await self.supabase.update_email_log(log_id, {
                 "status": "sent",
                 "email_sent": True,
                 "updated_at": datetime.now().isoformat()
