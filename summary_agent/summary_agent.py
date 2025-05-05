@@ -7,6 +7,9 @@ from email.mime.text import MIMEText
 from functools import wraps
 from supabase import create_client
 import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Import Google Generative AI client
 import google.generativeai as genai
@@ -21,7 +24,7 @@ logger = logging.getLogger("summary-agent")
 app = Flask(__name__)
 
 # Initialize Supabase client
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
 
 # Email template HTML with PrepZo colors
 EMAIL_TEMPLATE = """<!DOCTYPE html>
@@ -31,157 +34,267 @@ EMAIL_TEMPLATE = """<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Conversation Summary</title>
     <style>
+        /* Base styles */
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.6;
-            color: #f9f9f9;
             margin: 0;
             padding: 0;
-            background-color: #121212;
+            width: 100% !important;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333333;
+            background-color: #f5f7f5;
+            -webkit-text-size-adjust: none;
         }
-        .container {
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #1e1e1e;
-            border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        table {
+            border-spacing: 0;
+            border-collapse: collapse;
+            mso-table-lspace: 0pt;
+            mso-table-rspace: 0pt;
         }
-        .header {
-            text-align: center;
-            padding: 20px 0;
-            border-bottom: 1px solid #333;
+        table td {
+            border-collapse: collapse;
         }
-        .logo {
-            font-size: 32px;
-            font-weight: bold;
-            color: #ffffff;
-            margin-bottom: 5px;
-        }
-        .logo span {
-            color: #a675f5;
-        }
-        .title {
-            color: #ffffff;
-            font-size: 28px;
-            font-weight: 600;
-            margin-bottom: 5px;
-        }
-        .subtitle {
-            color: #a0a0a0;
-            font-size: 16px;
-            margin-top: 0;
-        }
-        .content {
-            padding: 20px 0;
-        }
-        .section-title {
-            color: #ffffff;
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 15px;
-            border-bottom: 1px solid #333;
-            padding-bottom: 5px;
-        }
-        .summary {
-            background-color: #252525;
-            padding: 15px;
-            border-radius: 5px;
-            border-left: 4px solid #a675f5;
-            color: #ffffff; /* Ensuring text is white */
-        }
-        .summary ul {
-            padding-left: 20px;
-            margin: 10px 0;
-        }
-        .summary li {
-            margin-bottom: 10px;
-            color: #ffffff; /* Ensuring bullet points are white */
-        }
-        .button-container {
-            text-align: center;
-            margin: 25px 0;
-        }
-        .button {
-            display: inline-block;
-            padding: 12px 24px;
-            background-color: #a675f5;
-            color: white;
-            text-decoration: none;
-            border-radius: 6px;
-            font-weight: 600;
-            text-transform: uppercase;
-            font-size: 14px;
-            letter-spacing: 0.5px;
-            transition: background-color 0.3s;
-        }
-        .button:hover {
-            background-color: #9161e3;
-        }
-        .footer {
-            text-align: center;
-            padding-top: 20px;
-            border-top: 1px solid #333;
-            color: #a0a0a0;
-            font-size: 14px;
-        }
-        .social-links {
-            margin-top: 15px;
-        }
-        .social-link {
-            display: inline-block;
-            margin: 0 8px;
-            color: #a675f5;
+        img {
+            -ms-interpolation-mode: bicubic;
+            border: 0;
+            outline: none;
             text-decoration: none;
         }
-        .highlight {
-            color: #a675f5;
-            font-weight: bold;
-        }
-        /* Ensure all text has sufficient contrast */
-        p {
-            color: #ffffff;
-        }
-        /* Style for bullet points specifically */
-        .summary ul li::marker {
-            color: #a675f5; /* Purple bullet points */
-        }
-        .summary ul li {
-            padding-left: 5px; /* Add some space after bullet */
+        /* Responsive styles */
+        @media only screen and (max-width: 620px) {
+            table[class=container] {
+                width: 100% !important;
+            }
+            table[class=container-padding] {
+                padding-left: 12px !important;
+                padding-right: 12px !important;
+            }
         }
     </style>
 </head>
-<body>
-    <div class="container">
-        <div class="header">
-            <div class="logo">prepzo<span>.</span></div>
-            <p class="subtitle">Your AI-Powered Career Coach</p>
-        </div>
-        
-        <div class="content">
-            <h2 class="section-title">Conversation Summary</h2>
-            <div class="summary">
-                {summary_content}
-            </div>
-            
-            <div class="button-container">
-                <a href="https://prepzo.ai" class="button">✨ CONTINUE YOUR JOURNEY ✨</a>
-            </div>
-            
-            <p>Thank you for using our services! This email contains a summary of your recent conversation (Session ID: <span class="highlight">{session_id}</span>).</p>
-            <p>Embark on a journey of professional growth with an AI coach that understands, remembers, and evolves with YOU.</p>
-        </div>
-        
-        <div class="footer">
-            <p>&copy; 2025 Prepzo.ai | All Rights Reserved</p>
-            <p>Your AI-Powered Career Coach</p>
-            <div class="social-links">
-                <a href="#" class="social-link">Twitter</a>
-                <a href="#" class="social-link">LinkedIn</a>
-                <a href="#" class="social-link">Instagram</a>
-            </div>
-        </div>
-    </div>
+<body style="margin: 0; padding: 0; background-color: #f5f7f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; width: 100% !important;">
+    <!-- Email Container -->
+    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+        <tr>
+            <td align="center" style="padding: 20px 0;">
+                <!-- Email Content -->
+                <table class="container" border="0" cellpadding="0" cellspacing="0" width="600" style="background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);">
+                    <!-- Header -->
+                    <tr>
+                        <td align="center" style="padding: 20px 0; border-bottom: 1px solid #e0e0e0;">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td align="center" style="font-size: 32px; font-weight: bold; color: #1c3724;">
+                                        Prepzo<span style="color: #45594c;">.</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td align="center" style="color: #45594c; font-size: 16px;">
+                                        Your AI Voice Assistant for Career Guidance
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                    <!-- Content -->
+                    <tr>
+                        <td class="container-padding" style="padding: 20px 30px;">
+                            <!-- Conversation Summary Section -->
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td style="color: #1c3724; font-size: 18px; font-weight: 600; border-bottom: 1px solid #e0e0e0; padding-bottom: 5px;">
+                                        Conversation Summary
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding-top: 15px;">
+                                        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f5f7f5; border-radius: 5px; border-left: 4px solid #1c3724;">
+                                            <tr>
+                                                <td style="padding: 15px; color: #333333;">
+                                                    {summary_content}
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <!-- CTA Button -->
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 25px 0;">
+                                <tr>
+                                    <td align="center">
+                                        <table border="0" cellpadding="0" cellspacing="0">
+                                            <tr>
+                                                <td align="center" bgcolor="#1c3724" style="border-radius: 6px;">
+                                                    <a href="https://prepzo.ai" target="_blank" style="padding: 12px 24px; color: white; text-decoration: none; display: inline-block; font-weight: 600; text-transform: uppercase; font-size: 14px; letter-spacing: 0.5px;">
+                                                        CONTINUE YOUR JOURNEY
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <!-- Thank you text -->
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td style="padding-bottom: 10px;">
+                                        Thank you for using our services! This email contains a summary of your recent conversation (Session ID: <span style="color: #1c3724; font-weight: bold;">{session_id}</span>).
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        Talk to Prepzo, your AI voice assistant that provides tailored strategies for your professional challenges, job search, and career growth.
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <!-- How Prepzo Can Help You -->
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 20px;">
+                                <tr>
+                                    <td style="color: #1c3724; font-size: 18px; font-weight: 600; border-bottom: 1px solid #e0e0e0; padding-bottom: 5px;">
+                                        How Prepzo Can Help You
+                                    </td>
+                                </tr>
+                                
+                                <!-- Step 1 -->
+                                <tr>
+                                    <td style="padding-top: 15px;">
+                                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                            <tr>
+                                                <td width="40" valign="top">
+                                                    <table border="0" cellpadding="0" cellspacing="0" width="28" height="28" bgcolor="#1c3724" style="border-radius: 50%; text-align: center;">
+                                                        <tr>
+                                                            <td valign="middle" align="center" style="color: white; font-weight: bold;">1</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                                <td style="padding-left: 10px;">
+                                                    Tailor your resume to specific job requirements
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                
+                                <!-- Step 2 -->
+                                <tr>
+                                    <td style="padding-top: 15px;">
+                                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                            <tr>
+                                                <td width="40" valign="top">
+                                                    <table border="0" cellpadding="0" cellspacing="0" width="28" height="28" bgcolor="#1c3724" style="border-radius: 50%; text-align: center;">
+                                                        <tr>
+                                                            <td valign="middle" align="center" style="color: white; font-weight: bold;">2</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                                <td style="padding-left: 10px;">
+                                                    Create personalized cover letters that stand out
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                
+                                <!-- Step 3 -->
+                                <tr>
+                                    <td style="padding-top: 15px;">
+                                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                            <tr>
+                                                <td width="40" valign="top">
+                                                    <table border="0" cellpadding="0" cellspacing="0" width="28" height="28" bgcolor="#1c3724" style="border-radius: 50%; text-align: center;">
+                                                        <tr>
+                                                            <td valign="middle" align="center" style="color: white; font-weight: bold;">3</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                                <td style="padding-left: 10px;">
+                                                    Prepare for interviews with industry-specific questions
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <!-- FAQ Section -->
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 20px;">
+                                <tr>
+                                    <td style="color: #1c3724; font-size: 18px; font-weight: 600; border-bottom: 1px solid #e0e0e0; padding-bottom: 5px;">
+                                        Frequently Asked Questions
+                                    </td>
+                                </tr>
+                                
+                                <!-- FAQ 1 -->
+                                <tr>
+                                    <td style="padding-top: 15px;">
+                                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                            <tr>
+                                                <td style="font-weight: 600; color: #1c3724; padding-bottom: 5px;">
+                                                    How long is the demo session?
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td>
+                                                    The free demo session is 10 minutes long, giving you enough time to experience Prepzo's capabilities.
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                
+                                <!-- FAQ 2 -->
+                                <tr>
+                                    <td style="padding-top: 15px;">
+                                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                            <tr>
+                                                <td style="font-weight: 600; color: #1c3724; padding-bottom: 5px;">
+                                                    Is the demo really free?
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td>
+                                                    Yes, no credit card required. Start your free demo now.
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td align="center" style="padding-top: 20px; border-top: 1px solid #e0e0e0; color: #45594c; font-size: 14px;">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td align="center" style="padding: 0 30px 10px 30px;">
+                                        &copy; 2025 Prepzo.ai | All Rights Reserved
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td align="center" style="padding: 0 30px 15px 30px;">
+                                        Your AI voice assistant for personalized career guidance and professional development
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td align="center" style="padding: 0 30px 20px 30px;">
+                                        <a href="#" style="color: #1c3724; text-decoration: none; margin: 0 8px;">LinkedIn</a>
+                                        <a href="#" style="color: #1c3724; text-decoration: none; margin: 0 8px;">Twitter</a>
+                                        <a href="#" style="color: #1c3724; text-decoration: none; margin: 0 8px;">Instagram</a>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
 </body>
 </html>"""
 
@@ -192,7 +305,7 @@ def generate_summary(conversation):
             for msg in conversation if msg.get("content")
         )
         prompt = (
-            "Summarize this conversation into 3-5 key bullet points. "
+            "Summarize this conversation into 5-10 key bullet points. "
             "Keep it concise and professional. Here is the conversation:\n\n"
             f"{formatted_conv}"
         )
@@ -213,9 +326,9 @@ def generate_email_content(summary, session_id):
             formatted_summary = ''
             for line in summary_lines:
                 if line.strip():
-                    # Add some styling to each bullet point to ensure visibility
-                    formatted_summary += f'<li style="color: #ffffff; margin-bottom: 10px;">{line.strip()}</li>\n'
-            summary = f'<ul style="color: #ffffff; padding-left: 20px;">\n{formatted_summary}</ul>'
+                    # Add bullet point styling compatible with email clients
+                    formatted_summary += f'<li style="margin-bottom: 10px; color: #333333;">{line.strip()}</li>\n'
+            summary = f'<ul style="margin: 5px 0; padding-left: 20px;">\n{formatted_summary}</ul>'
         else:
             # If summary already has bullets, convert to HTML with styling
             summary_items = []
@@ -225,9 +338,9 @@ def generate_email_content(summary, session_id):
                     cleaned_line = line.strip()
                     if cleaned_line.startswith('•') or cleaned_line.startswith('-'):
                         cleaned_line = cleaned_line[1:].strip()
-                    summary_items.append(f'<li style="color: #ffffff; margin-bottom: 10px;">{cleaned_line}</li>')
+                    summary_items.append(f'<li style="margin-bottom: 10px; color: #333333;">{cleaned_line}</li>')
             
-            summary = f'<ul style="color: #ffffff; padding-left: 20px;">\n' + '\n'.join(summary_items) + '\n</ul>'
+            summary = f'<ul style="margin: 5px 0; padding-left: 20px;">\n' + '\n'.join(summary_items) + '\n</ul>'
         
         # Replace placeholders with actual content
         email_content = EMAIL_TEMPLATE.replace('{summary_content}', summary)
@@ -323,7 +436,7 @@ def send_summary_email(email, email_content, session_id):
             
         raise
 
-WEBHOOK_SECRET ='**************************'
+WEBHOOK_SECRET ='abcd1234'
 # os.getenv("WEBHOOK_SECRET")
 
 def validate_webhook(f):
@@ -405,7 +518,7 @@ def test_email():
 • The assistant provided personalized guidance on skill development and networking strategies.
 • The user requested resources for interview preparation and resume enhancement."""
         
-        test_session_id = "test-session-123456"
+        test_session_id = "test-session-12356"
         
         email_content = generate_email_content(test_summary, test_session_id)
         send_summary_email(test_email, email_content, test_session_id)
