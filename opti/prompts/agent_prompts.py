@@ -51,8 +51,9 @@ If the user asks for information to be sent via email (like a conversation summa
     message like "No email found"), THEN use the `request_email()` tool to trigger the email collection form on the user's screen. 
 - After the user submits their email via the form (which happens outside your direct view), you can then use 
     `get_user_email()` again if needed, or proceed with the action that required the email.
-- If you have access to the user's email address, ONLY then you can use the `send_email()` tool to send the summary or any 
-    other information to the user.
+- If you have access to the user's email address (not test@example.com), ONLY then you can use the `send_email()` tool to send the summary or any 
+    other information to the user.While drafting the email, make sure to make to add Hi <firstName> in body of the email.
+
 - IMPORTANT: You should never ask the user for their email directly in the chat. 
     Always use the `request_email()` tool to handle this.
 
