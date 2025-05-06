@@ -66,7 +66,10 @@ def require_internal_api_key(f):
 app = Flask(__name__)
 
 FRONTEND_ORIGIN = os.environ.get('FRONTEND_ORIGIN', 'http://localhost:3000')
-CORS(app, origins=[FRONTEND_ORIGIN], supports_credentials=True)
+CORS(app, origins=[
+    FRONTEND_ORIGIN,
+    'http://localhost:3000'
+], supports_credentials=True)
 
 # Session Configuration
 app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'a_default_secret_key_for_development') 

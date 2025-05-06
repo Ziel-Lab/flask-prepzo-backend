@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  summary-agent:
+    build:
+      context: ..
+      dockerfile: ./summary_agent/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GMAIL_USER=${GMAIL_USER}
+      - GMAIL_PASSWORD=${GMAIL_PASSWORD}
+      - FRONTEND_ORIGIN=${FRONTEND_ORIGIN:-https://prepzo.ai}
+    volumes:
+      - ../summary_agent:/app
+    restart: unless-stopped 
