@@ -8,6 +8,7 @@ from functools import wraps
 from supabase import create_client
 import datetime
 from dotenv import load_dotenv
+from flask_cors import CORS
 
 load_dotenv()
 
@@ -22,6 +23,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("summary-agent")
 
 app = Flask(__name__)
+
+FRONTEND_ORIGIN = os.environ.get('FRONTEND_ORIGIN', 'http://localhost:3000')
+CORS(app, origins=[
+    FRONTEND_ORIGIN,
+    'http://localhost:3000'
+], supports_credentials=True)
 
 # Initialize Supabase client
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
@@ -306,9 +313,13 @@ def generate_summary(conversation):
         )
         prompt = (
             "Summarize this conversation into 5-10 key bullet points. "
-            "Keep it concise and professional. Here is the conversation:\n\n"
+            "Keep it concise and professional. "
+            "EXCLUDE any tool calls, tool results, or system-generated messages.You have to consider on;ly those messages having user or assistant as role."
+            "Focus solely on the key interactions between the user and the assistant. "
+            "Here is the conversation:\n\n"
             f"{formatted_conv}"
         )
+
         model = genai.GenerativeModel('gemini-2.0-flash')
         response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.2))
         summary = response.text
@@ -436,74 +447,6 @@ def send_summary_email(email, email_content, session_id):
             
         raise
 
-WEBHOOK_SECRET ='abcd1234'
-# os.getenv("WEBHOOK_SECRET")
-
-def validate_webhook(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        # Verify secret token
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            logger.warning("Missing or invalid Authorization header")
-            return jsonify({"status": "unauthorized"}), 401
-            
-        received_secret = auth_header.split(" ")[1]
-        if received_secret != WEBHOOK_SECRET:
-            logger.warning("Invalid webhook secret")
-            return jsonify({"status": "unauthorized"}), 401
-            
-        # Verify content type
-        if request.content_type != 'application/json':
-            logger.warning("Invalid content type")
-            return jsonify({"status": "unsupported media type"}), 415
-            
-        return f(*args, **kwargs)
-    return decorated_function
-
-@app.route("/webhook/email-added", methods=["POST"])
-@validate_webhook
-def handle_email_webhook():
-    try:
-        payload = request.get_json()
-        logger.info(f"Received valid webhook payload")
-        
-        # Validate payload structure
-        if not payload or "record" not in payload:
-            logger.error("Invalid payload structure")
-            return jsonify({"status": "bad request"}), 400
-            
-        record = payload["record"]
-        required_fields = ["session_id", "email"]
-        
-        if not all(field in record for field in required_fields):
-            logger.error("Missing required fields in payload")
-            return jsonify({"status": "bad request"}), 400
-            
-        session_id = record["session_id"]
-        email = record["email"]
-        
-        # Get conversation history
-        conv_response = supabase.table("conversation_histories") \
-            .select("conversation") \
-            .eq("session_id", session_id) \
-            .execute()
-
-        if not conv_response.data:
-            logger.error(f"No conversation found for session {session_id}")
-            return jsonify({"status": "not found"}), 404
-
-        # Generate and send summary
-        conversation = conv_response.data[0]["conversation"]
-        summary = generate_summary(conversation)
-        email_content = generate_email_content(summary, session_id)
-        
-        send_summary_email(email, email_content, session_id)
-        return jsonify({"status": "success"})
-
-    except Exception as e:
-        logger.error(f"Webhook processing failed: {str(e)}")
-        return jsonify({"status": "error", "detail": str(e)}), 500
 
 @app.route("/test-email", methods=["GET"])
 def test_email():
@@ -529,8 +472,55 @@ def test_email():
         logger.error(f"Test email failed: {str(e)}")
         return jsonify({"status": "error", "detail": str(e)}), 500
 
+
+@app.route("/sendsummary", methods=["POST"])
+def send_summary():
+    try:
+        payload = request.get_json()
+        
+        if not payload or "room_id" not in payload:
+            logger.error("Missing room_id in request")
+            return jsonify({"status": "bad request"}), 400
+            
+        session_id = payload["room_id"]
+        logger.info(f"Received summary request for session {session_id}")
+        
+        # Get user email from database
+        email_response = supabase.table("user_emails") \
+            .select("email") \
+            .eq("session_id", session_id) \
+            .execute()
+            
+        if not email_response.data:
+            logger.error(f"No email found for session {session_id}")
+            return jsonify({"status": "not found"}), 404
+            
+        email = email_response.data[0]["email"]
+        
+        # Get conversation history
+        conv_response = supabase.table("conversation_histories") \
+            .select("conversation") \
+            .eq("session_id", session_id) \
+            .execute()
+
+        if not conv_response.data:
+            logger.error(f"No conversation found for session {session_id}")
+            return jsonify({"status": "not found"}), 404
+
+        # Generate and send summary
+        conversation = conv_response.data[0]["conversation"]
+        summary = generate_summary(conversation)
+        email_content = generate_email_content(summary, session_id)
+        
+        send_summary_email(email, email_content, session_id)
+        return jsonify({"status": "success"})
+
+    except Exception as e:
+        logger.error(f"Summary processing failed: {str(e)}")
+        return jsonify({"status": "error", "detail": str(e)}), 500
+
 required_env_vars = [
-    "SUPABASE_URL", "SUPABASE_KEY",
+    "SUPABASE_URL",
     "GOOGLE_API_KEY",
 ]
 

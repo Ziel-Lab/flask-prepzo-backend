@@ -238,7 +238,7 @@ class ResumeAnalysisService:
             logger.error(traceback.format_exc())
             raise
 
-    def _cleanup_old_uploads(self, max_age_hours: int = 24, max_files: int = 20):
+    def _cleanup_old_uploads(self, max_age_hours: int = 12, max_files: int = 10):
         """Improved cleanup with age-based removal"""
         now = datetime.now()
         deleted = 0

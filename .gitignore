@@ -48,3 +48,6 @@ next-env.d.ts
 
 /opti/cred.json
 /opti/application_default_credentials.json
+
+/summary_agent/.env-example
+/summary_agent/run_summary_agent.sh

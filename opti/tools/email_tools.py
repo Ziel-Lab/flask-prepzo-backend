@@ -129,7 +129,7 @@ class EmailTools:
             
             # Create the email
             msg = MIMEMultipart()
-            msg["From"] = sender_email
+            msg["From"] = f"Prepzo AI <{sender_email}>" 
             msg["To"] = recipient_email
             msg["Subject"] = subject
             msg.attach(MIMEText(message_body, "plain"))
