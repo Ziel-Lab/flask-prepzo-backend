@@ -520,7 +520,7 @@ def send_summary():
         return jsonify({"status": "error", "detail": str(e)}), 500
 
 required_env_vars = [
-    "SUPABASE_URL", "SUPABASE_KEY",
+    "SUPABASE_URL",
     "GOOGLE_API_KEY",
 ]
 
