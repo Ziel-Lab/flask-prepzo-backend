@@ -23,7 +23,11 @@ class ResumeAnalysisService:
     MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
     SUPPORTED_MIME_TYPES = {
         '.pdf': 'application/pdf',
-        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '.doc': 'application/msword',
+        '.png': 'image/png',          # Add PNG support
+        '.jpg': 'image/jpeg',         # Add JPG support
+        '.jpeg': 'image/jpeg'         # Add JPEG support (uses same MIME type as JPG)
     }
 
     def __init__(self):
@@ -36,7 +40,6 @@ class ResumeAnalysisService:
         try:
             self._initialize_gemini()
             self.is_configured = True
-            logger.info("Gemini service initialized successfully")
         except Exception as e:
             logger.error(f"Initialization failed: {str(e)}")
             logger.error(traceback.format_exc())

@@ -14,6 +14,9 @@ from .agent import PrepzoAgent
 from ..data.conversation_manager import ConversationManager
 from ..config import settings
 from ..utils.logging_config import setup_logger
+# Import the new client and default instructions for fallback
+from ..data.supabase_client import SupabaseAgentConfigClient
+from ..prompts.agent_prompts import AGENT_INSTRUCTIONS as DEFAULT_AGENT_INSTRUCTIONS
 
 # Use centralized logger
 logger = setup_logger("agent-session")
@@ -26,17 +29,64 @@ async def initialize_session(ctx: JobContext):
         ctx (JobContext): The job context from LiveKit
     """
     try:
+        logger.info(f"Agent JobContext received for room {ctx.room.name}")
+
+        # ---- Add Shutdown Hook ----
+        async def _shutdown_hook():
+            logger.info(f"Agent for room {ctx.room.name} is shutting down.")
+            # Add any other cleanup logic here if needed (e.g., flushing conversation manager)
+            if 'conversation_manager' in locals() and conversation_manager:
+                await conversation_manager.flush_and_close() # Example cleanup
+                logger.info(f"ConversationManager for room {ctx.room.name} flushed and closed.")
+
+        ctx.add_shutdown_callback(_shutdown_hook)
+        logger.info(f"Shutdown hook registered for room {ctx.room.name}")
+        # ---- End Shutdown Hook ----
+
         logger.info("Initializing agent session components")
         
         # Initialize voice and LLM plugins
-        vad_plugin = silero.VAD.load()
+        # Run potentially blocking VAD loading in a separate thread
+        vad_plugin = await asyncio.to_thread(silero.VAD.load)
         logger.info("VAD model initialized")
         
-        tts_plugin = openai.TTS(
-            model=settings.DEFAULT_TTS_MODEL,
-            voice=settings.DEFAULT_TTS_VOICE,
-        )
-        logger.info("TTS client initialized")
+        # Initialize TTS plugin based on settings
+        if hasattr(settings, 'TTS_PROVIDER') and settings.TTS_PROVIDER == "google":
+            try:
+                # Ensure Google TTS settings are available
+                if not all(hasattr(settings, attr) for attr in ['GOOGLE_TTS_LANGUAGE', 'GOOGLE_TTS_VOICE_NAME', 'GOOGLE_TTS_GENDER']):
+                    logger.error("Google TTS provider selected, but required settings (GOOGLE_TTS_LANGUAGE, GOOGLE_TTS_VOICE_NAME, GOOGLE_TTS_GENDER) are missing. Falling back to OpenAI TTS.")
+                    raise AttributeError("Missing Google TTS settings")
+
+                tts_plugin = google.TTS(
+                    language=settings.GOOGLE_TTS_LANGUAGE,
+                    voice_name=settings.GOOGLE_TTS_VOICE_NAME,
+                    gender=settings.GOOGLE_TTS_GENDER
+                )
+                logger.info(f"TTS client initialized with Google TTS (Language: {settings.GOOGLE_TTS_LANGUAGE}, Voice: {settings.GOOGLE_TTS_VOICE_NAME}, Gender: {settings.GOOGLE_TTS_GENDER}, Speaking Rate: {getattr(settings, 'GOOGLE_TTS_SPEAKING_RATE', 1.0)})")
+            except Exception as e:
+                logger.error(f"Failed to initialize Google TTS with specified settings: {e}. Falling back to OpenAI TTS.")
+                # Fallback to OpenAI if Google TTS initialization fails
+                tts_plugin = openai.TTS(
+                    model=getattr(settings, 'OPENAI_TTS_MODEL', 'tts-1'), # Provide default if not set
+                    voice=getattr(settings, 'OPENAI_TTS_VOICE', 'nova')   # Provide default if not set
+                )
+                logger.info(f"TTS client initialized with fallback OpenAI TTS (Model: {getattr(settings, 'OPENAI_TTS_MODEL', 'tts-1')}, Voice: {getattr(settings, 'OPENAI_TTS_VOICE', 'nova')})")
+        
+        elif hasattr(settings, 'TTS_PROVIDER') and settings.TTS_PROVIDER == "openai":
+            tts_plugin = openai.TTS(
+                model=getattr(settings, 'OPENAI_TTS_MODEL', 'tts-1'),
+                voice=getattr(settings, 'OPENAI_TTS_VOICE', 'nova')
+            )
+            logger.info(f"TTS client initialized with OpenAI TTS (Model: {getattr(settings, 'OPENAI_TTS_MODEL', 'tts-1')}, Voice: {getattr(settings, 'OPENAI_TTS_VOICE', 'nova')})")
+        
+        else: # Default or if TTS_PROVIDER is not set or invalid
+            logger.warning(f"TTS_PROVIDER setting is missing or invalid ('{getattr(settings, 'TTS_PROVIDER', 'Not Set')}'). Defaulting to OpenAI TTS.")
+            tts_plugin = openai.TTS(
+                model=getattr(settings, 'OPENAI_TTS_MODEL', 'tts-1'),
+                voice=getattr(settings, 'OPENAI_TTS_VOICE', 'nova')
+            )
+            logger.info(f"TTS client initialized with default OpenAI TTS (Model: {getattr(settings, 'OPENAI_TTS_MODEL', 'tts-1')}, Voice: {getattr(settings, 'OPENAI_TTS_VOICE', 'nova')})")
         
         stt_plugin = deepgram.STT()
         logger.info("STT client initialized")
@@ -57,8 +107,26 @@ async def initialize_session(ctx: JobContext):
         await conversation_manager.initialize_session(ctx.room.name)
         logger.info(f"ConversationManager initialized for room: {ctx.room.name}")
 
-        # Initialize the agent
-        agent = PrepzoAgent(room_name=ctx.room.name, conversation_manager=conversation_manager)
+        # Initialize SupabaseAgentConfigClient to fetch system prompt
+        agent_config_client = SupabaseAgentConfigClient()
+
+        agent_name_to_fetch = "homepage"
+        system_prompt = await agent_config_client.get_system_prompt(agent_name=agent_name_to_fetch)
+
+        system_prompt_to_use: str
+        if system_prompt:
+            system_prompt_to_use = system_prompt
+            logger.info(f"Successfully fetched and will use system prompt for agent '{agent_name_to_fetch}'.")
+        else:
+            system_prompt_to_use = DEFAULT_AGENT_INSTRUCTIONS
+            logger.warning(f"Failed to fetch system prompt for '{agent_name_to_fetch}'. Falling back to default AGENT_INSTRUCTIONS.")
+
+        # Initialize the agent with the fetched or fallback prompt
+        agent = PrepzoAgent(
+            room_name=ctx.room.name, 
+            conversation_manager=conversation_manager,
+            instructions=system_prompt_to_use # Pass the fetched or fallback instructions
+        )
 
         # Create the agent session
         session = AgentSession(
@@ -82,6 +150,10 @@ async def initialize_session(ctx: JobContext):
     except Exception as e:
         logger.error(f"Error in agent session: {str(e)}")
         logger.error(traceback.format_exc())
+        # Ensure agent attempts to shutdown gracefully even on initialization error
+        # though if ctx.connect() hasn't happened, it might not be fully effective.
+        # Consider if a more specific shutdown is needed here.
+        # For now, re-raising will let LiveKit handle termination.
         raise
 
 def _register_event_handlers(session: AgentSession, conversation_manager: ConversationManager):

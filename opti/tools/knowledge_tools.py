@@ -2,6 +2,7 @@ from livekit.agents import function_tool
 from typing import Annotated
 from ..services.pinecone_service import PineconeService
 from ..utils.logging_config import setup_logger
+from ..data.conversation_manager import ConversationManager
 
 # Use centralized logger
 logger = setup_logger("knowledge-tools")
@@ -9,7 +10,7 @@ logger = setup_logger("knowledge-tools")
 class KnowledgeTools:
     """Knowledge base search tools for the agent"""
     
-    def __init__(self, room_name: str, conversation_manager):
+    def __init__(self, room_name: str, conversation_manager: ConversationManager):
         """
         Initialize knowledge base tools
         
@@ -20,7 +21,6 @@ class KnowledgeTools:
         self.room_name = room_name
         self.conversation_manager = conversation_manager
         self.pinecone_service = PineconeService()
-        logger.info(f"KnowledgeTools initialized for room: {room_name}")
     
     def _log_tool_result(self, result_content: str):
         """Log tool result to conversation manager"""

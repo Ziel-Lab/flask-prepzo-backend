@@ -6,25 +6,30 @@ from ..utils.logging_config import setup_logger
 # Use centralized logger
 logger = setup_logger("perplexity-service")
 
+PERPLEXITY_API_URL = "https://api.perplexity.ai"
+
 class PerplexityService:
     """Service for accessing Perplexity's web search API"""
     
     def __init__(self):
-        """Initialize the service with Perplexity API credentials"""
-        try:
-            api_key = settings.PERPLEXITY_API_KEY
-            if not api_key:
-                logger.warning("Missing PERPLEXITY_API_KEY environment variable. Web search will not work.")
-                self.client = None
-            else:
-                self.client = AsyncOpenAI(api_key=api_key, base_url="https://api.perplexity.ai")
-                logger.info("PerplexityService initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize PerplexityService: {e}")
-            logger.error(traceback.format_exc())
-            self.client = None
+        """Initialize the service with Perplexity API credentials and client"""
+        self.api_key = settings.PERPLEXITY_API_KEY
+        self.client = None # Initialize client attribute
+        self.is_configured = False
 
-    async def web_search(self, query: str, model_name: str = "sonar") -> str:
+        if not self.api_key:
+            logger.error("Perplexity API key is missing. PerplexityService will not be functional.")
+            return
+        
+        try:
+            self.client = AsyncOpenAI(api_key=self.api_key, base_url=PERPLEXITY_API_URL)
+            self.is_configured = True
+            logger.info("PerplexityService initialized successfully with client.")
+        except Exception as e:
+            logger.error(f"Failed to initialize PerplexityService client: {e}")
+            # self.client remains None, self.is_configured remains False
+
+    async def web_search(self, query: str, model_name: str = "sonar") -> str: 
         """
         Performs a web search using Perplexity API
         
@@ -35,8 +40,9 @@ class PerplexityService:
         Returns:
             str: The search results as a string
         """
-        if not self.client:
-            return "Web search is currently unavailable due to missing API credentials."
+        if not self.is_configured or not self.client: # Check if configured and client exists
+            logger.warning("PerplexityService not configured or client not initialized. Web search unavailable.")
+            return "Web search is currently unavailable due to a configuration issue."
             
         try:
             messages = [

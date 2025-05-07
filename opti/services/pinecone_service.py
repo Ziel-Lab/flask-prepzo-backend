@@ -18,18 +18,18 @@ class PineconeService:
             # Initialize Pinecone client
             self.pc = Pinecone(api_key=settings.PINECONE_API_KEY, environment=settings.PINECONE_REGION)
             self.index_name = settings.PINECONE_INDEX_NAME
+            self.index = self.pc.Index(self.index_name)
+            self.is_configured = True
+            # logger.info(f"PineconeService initialized with index: {self.index_name}") # Removed log
             
             # Initialize OpenAI client for embeddings
             self.openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
             
             # Create index if it doesn't exist
             self._ensure_index_exists()
-            
-            logger.info(f"PineconeService initialized with index: {self.index_name}")
         except Exception as e:
-            logger.error(f"Failed to initialize PineconeService: {e}")
-            logger.error(traceback.format_exc())
-            raise
+            logger.error(f"Failed to initialize PineconeService: {e}", exc_info=True)
+            self.is_configured = False
             
     def _ensure_index_exists(self):
         """Ensure the Pinecone index exists, creating it if needed"""

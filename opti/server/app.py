@@ -32,8 +32,8 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 else:
     logger.info("Supabase URL and Key loaded.")
     
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-logger.info("Supabase client initialized.")
+# supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+# logger.info("Supabase client initialized.") # Removed log
 # --- END SUPABASE CONFIGURATION ---
 
 # --- ADD INTERNAL API KEY VERIFICATION DECORATOR ---
@@ -65,7 +65,7 @@ def require_internal_api_key(f):
 # Initialize Flask app
 app = Flask(__name__)
 
-FRONTEND_ORIGIN = os.environ.get('FRONTEND_ORIGIN', 'http://localhost:3000')
+FRONTEND_ORIGIN = os.environ.get('FRONTEND_ORIGIN')
 CORS(app, origins=[FRONTEND_ORIGIN], supports_credentials=True)
 
 # Session Configuration
@@ -82,6 +82,35 @@ VALID_PASSWORDS = {pw.strip() for pw in PAGE_PASSWORDS_STR.split(',') if pw.stri
 # Ensure uploads directory exists
 UPLOAD_FOLDER = settings.UPLOAD_FOLDER
 UPLOAD_FOLDER.mkdir(exist_ok=True)
+
+# Define the cleanup threshold
+UPLOAD_CLEANUP_THRESHOLD = 15
+
+def cleanup_upload_folder(folder: pathlib.Path, max_files: int):
+    """Checks the number of files and deletes the oldest if threshold is exceeded."""
+    try:
+        files = [f for f in folder.iterdir() if f.is_file()]
+        
+        if len(files) >= max_files:
+            logger.info(f"Upload folder cleanup triggered: {len(files)} files >= threshold {max_files}")
+            # Sort files by modification time (oldest first)
+            files.sort(key=lambda x: x.stat().st_mtime)
+            
+            # Calculate how many files to delete
+            files_to_delete_count = len(files) - max_files + 1
+            files_to_delete = files[:files_to_delete_count]
+            
+            logger.info(f"Deleting {len(files_to_delete)} oldest files...")
+            for file_to_delete in files_to_delete:
+                try:
+                    file_to_delete.unlink()
+                    logger.info(f"Deleted old file: {file_to_delete.name}")
+                except OSError as delete_err:
+                    logger.error(f"Error deleting file {file_to_delete}: {delete_err}")
+            logger.info("Upload folder cleanup finished.")
+            
+    except Exception as cleanup_err:
+        logger.error(f"Error during upload folder cleanup: {cleanup_err}", exc_info=True)
 
 async def generate_room_name():
     """Generate a random room name"""
@@ -234,7 +263,7 @@ def process_resume():
 
         # Validate file extension
         file_extension = pathlib.Path(file.filename).suffix
-        allowed_extensions = ['.pdf', '.doc', '.docx']
+        allowed_extensions = ['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg']
         if file_extension.lower() not in allowed_extensions:
             logger.error(f"Invalid file type received: {file_extension}")
             return jsonify({"error": f"Invalid file type. Allowed: {', '.join(allowed_extensions)}"}), 400
@@ -243,11 +272,24 @@ def process_resume():
         safe_filename = f"{session_id}_resume{file_extension}"
         file_path = UPLOAD_FOLDER / safe_filename
 
+        # --- Debugging: Log the absolute path --- 
+        logger.info(f"Attempting to save resume to absolute path: {file_path.resolve()}")
+        # --- End Debugging --- 
+
         # Save the file synchronously (Replaced aiofiles)
         try:
             # Use file.save() which handles streaming data safely
-            file.save(file_path) 
+            file.save(file_path)
+            # --- Debugging: Confirm save completed --- 
+            logger.info(f"file.save() completed for: {file_path}")
+            # --- End Debugging --- 
+            
             logger.info(f"Resume for session {session_id} saved to {file_path}")
+
+            # --- Add cleanup logic here ---
+            cleanup_upload_folder(UPLOAD_FOLDER, UPLOAD_CLEANUP_THRESHOLD)
+            # --- End cleanup logic ---
+
             return jsonify({"message": "Resume received and saved successfully"}), 200
         except Exception as save_err:
             logger.error(f"Error saving file {file_path}: {save_err}", exc_info=True) # Added exc_info

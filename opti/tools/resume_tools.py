@@ -2,6 +2,7 @@ from livekit.agents import function_tool,ToolError,get_job_context
 from typing import Annotated
 from ..services.docai import ResumeAnalysisService
 from ..utils.logging_config import setup_logger
+from ..data.conversation_manager import ConversationManager
 import json
 
 # Use centralized logger
@@ -10,7 +11,7 @@ logger = setup_logger("resume-tools")
 class ResumeTools:
     """Resume-related tools for the agent"""
     
-    def __init__(self, room_name: str, conversation_manager):
+    def __init__(self, room_name: str, conversation_manager: ConversationManager):
         """
         Initialize resume tools
         
@@ -20,9 +21,9 @@ class ResumeTools:
         """
         self.room_name = room_name
         self.conversation_manager = conversation_manager
-        self.resume_service = ResumeAnalysisService()
+        self.gemini_service = ResumeAnalysisService()
         self.agent_state = None  # Track agent state
-        logger.info(f"ResumeTools initialized for room: {room_name}")
+        # logger.info(f"ResumeTools initialized for room: {room_name}") # Removed log
     
     def _log_tool_result(self, result_content: str):
         """Log tool result to conversation manager"""
@@ -119,7 +120,7 @@ class ResumeTools:
             logger.info(f"Attempting to analyze resume for session: {self.room_name}")
 
             # Call the Gemini-based analysis service
-            analysis: dict = await self.resume_service.analyze_resume(self.room_name)
+            analysis: dict = await self.gemini_service.analyze_resume(self.room_name)
             self._log_tool_result(analysis)
 
             # Short-circuit on error

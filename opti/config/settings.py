@@ -42,6 +42,14 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_REGION = os.getenv("PINECONE_REGION")
 PINECONE_INDEX_NAME = "coachingbooks"
 
+
+TTS_PROVIDER = "google"
+
+# Also ensure your Google TTS specific settings are present and correct:
+GOOGLE_TTS_LANGUAGE = "en-US"
+GOOGLE_TTS_VOICE_NAME = "en-US-Chirp3-HD-Laomedeia"
+GOOGLE_TTS_GENDER = "female"
+
 # Google Document AI settings
 GOOGLE_PROJECT_ID = os.getenv("GOOGLE_PROJECT_ID")
 DOCAI_LOCATION = os.getenv("DOCAI_LOCATION")
@@ -50,7 +58,7 @@ DOCAI_LAYOUT_PROCESSOR_ID = os.getenv("DOCAI_LAYOUT_PROCESSOR_ID")
 # AI Model settings
 DEFAULT_TTS_MODEL = "gpt-4o-mini-tts"
 DEFAULT_TTS_VOICE = "nova"
-DEFAULT_LLM_MODEL = "gemini-2.0-flash"
+DEFAULT_LLM_MODEL = "gemini-2.5-flash-preview-04-17"
 DEFAULT_LLM_TEMPERATURE = 0.8
 
 GEMINI_API_KEY= os.getenv("GEMINI_API_KEY")

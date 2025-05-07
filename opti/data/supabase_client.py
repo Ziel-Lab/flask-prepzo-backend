@@ -4,6 +4,7 @@ import logging
 import traceback
 from ..config import settings
 from ..utils.logging_config import setup_logger
+import asyncio
 
 # Use centralized logger
 logger = setup_logger("supabase-client")
@@ -13,17 +14,20 @@ class SupabaseEmailClient:
     
     def __init__(self):
         """Initialize Supabase client with credentials from settings"""
+        self.client = None
         try:
-            self.client: Client = create_client(
-                settings.SUPABASE_URL,
-                settings.SUPABASE_KEY
-            )
-            logger.info("Supabase client initialized successfully")
+            url = settings.SUPABASE_URL
+            key = settings.SUPABASE_KEY
+            if not url or not key:
+                 logger.error("Missing SUPABASE_URL or SUPABASE_KEY. Cannot initialize SupabaseEmailClient.")
+                 return # Prevent initialization if config is missing
+                 
+            self.client: Client = create_client(url, key)
+            # logger.info("Supabase client initialized successfully") # Log remains commented out
         except Exception as e:
-            logger.error(f"Failed to initialize Supabase client: {e}")
-            logger.error(traceback.format_exc())
-            raise
-    
+            logger.error(f"Failed to initialize Supabase client: {e}", exc_info=True)
+            # self.client remains None
+
     async def get_email_for_session(self, session_id: str) -> Optional[str]:
         """
         Retrieve the most recent email address associated with a session ID
@@ -123,3 +127,63 @@ class SupabaseEmailClient:
         except Exception as e:
             logger.error(f"Failed to update email log {log_id}: {str(e)}")
             return False 
+
+class SupabaseAgentConfigClient:
+    """Client for fetching agent configuration, like system prompts, via Supabase"""
+
+    def __init__(self):
+        """Initialize Supabase client with credentials from settings"""
+        self.client: Optional[Client] = None # Ensure type hint for client
+        try:
+            url = settings.SUPABASE_URL
+            key = settings.SUPABASE_KEY
+            if not url or not key:
+                logger.error("Missing SUPABASE_URL or SUPABASE_KEY. Cannot initialize SupabaseAgentConfigClient.")
+                return  # Prevent initialization if config is missing
+
+            self.client = create_client(url, key)
+            # logger.info("SupabaseAgentConfigClient initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize SupabaseAgentConfigClient: {e}", exc_info=True)
+            # self.client remains None
+
+    async def get_system_prompt(self, agent_name: str) -> Optional[str]:
+        """
+        Retrieve the system prompt for a given agent_name from the 'Agent Instructions' table.
+
+        Args:
+            agent_name (str): The name of the agent (e.g., 'homepage') to fetch the prompt for.
+
+        Returns:
+            Optional[str]: The system prompt string if found and valid, None otherwise.
+        """
+        if not self.client:
+            logger.error("SupabaseAgentConfigClient not initialized. Cannot fetch system prompt.")
+            return None
+        try:
+            logger.info(f"Fetching system prompt for agent_name: {agent_name} from table 'Agent Instructions'")
+
+            response = await asyncio.to_thread(
+                self.client.table('Agent Instructions')  # Use the exact table name from Supabase UI
+                .select('system_prompt')
+                .ilike('agent_name', agent_name)  # Use ilike for case-insensitive matching
+                .limit(1)
+                .execute
+            )
+
+            if response.data and len(response.data) > 0:
+                prompt_data = response.data[0]
+                prompt = prompt_data.get('system_prompt')
+                if prompt and isinstance(prompt, str):
+                    logger.info(f"System prompt found and retrieved for agent_name: {agent_name}")
+                    return prompt
+                elif prompt is None:
+                    return None # Prompt field is null
+                else:
+                    return None # Prompt field is missing or not a string
+            
+            logger.info(f"No data returned for system prompt with agent_name: {agent_name} (no matching row found).")
+            return None  
+        except Exception as e:
+            logger.error(f"Error fetching system prompt for agent_name {agent_name}: {str(e)}", exc_info=True)
+            return None 

@@ -31,10 +31,10 @@ class EmailTools:
         self.conversation_manager = conversation_manager
         self.supabase = SupabaseEmailClient()
         self._session_emails = {}  # Cache for session emails
-        logger.info(f"EmailTools initialized for room: {room_name}")
+        # logger.info(f"EmailTools initialized for room: {room_name}") # Removed log
         
     def _log_tool_result(self, result_content: str):
-        """Log tool result to conversation manager"""
+        """Helper to log tool result to conversation manager"""
         if self.conversation_manager:
             try:
                 self.conversation_manager.add_message({

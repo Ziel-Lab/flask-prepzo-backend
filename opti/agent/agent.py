@@ -12,7 +12,6 @@ from ..tools.email_tools import EmailTools
 from ..tools.web_search import WebSearchTools
 from ..tools.knowledge_tools import KnowledgeTools
 from ..tools.resume_tools import ResumeTools
-from ..prompts.agent_prompts import AGENT_INSTRUCTIONS
 from ..utils.logging_config import setup_logger
 from ..data.conversation_manager import ConversationManager
 
@@ -27,13 +26,14 @@ class PrepzoAgent(Agent):
     access to real-time information, resume analysis, and knowledge base.
     """
     
-    def __init__(self, room_name: str, conversation_manager: ConversationManager):
+    def __init__(self, room_name: str, conversation_manager: ConversationManager, instructions: str):
         """
         Initialize the PrepzoAgent
         
         Args:
             room_name (str): The room identifier
             conversation_manager (ConversationManager): The conversation manager instance
+            instructions (str): The instructions for the agent
         """
         self.conversation_manager = conversation_manager
         
@@ -55,7 +55,7 @@ class PrepzoAgent(Agent):
         ]
         
         # Initialize the base Agent with instructions and tools
-        super().__init__(instructions=AGENT_INSTRUCTIONS, tools=tools)
+        super().__init__(instructions=instructions, tools=tools)
         logger.info(f"PrepzoAgent initialized for room: {room_name} with {len(tools)} tools.")
 
 
@@ -82,6 +82,7 @@ class PrepzoAgent(Agent):
         chunk_index = 0 
         buffer = ""
         suppress_output_this_turn = False # Flag to suppress all output for this LLM turn once trigger is detected
+        manual_trigger_fired_this_turn = False # Flag to prevent multiple manual triggers in one turn
         
         async for chunk in llm_stream:
             # Log every chunk for debugging
@@ -97,9 +98,11 @@ class PrepzoAgent(Agent):
                  if not suppress_output_this_turn:
                     buffer += chunk.delta.content
                     # Check if the trigger phrase is now in the buffer
-                    if "SYSTEM_TRIGGER_RESUME_REQUEST" in buffer.strip():
+                    # AND if we haven't already fired the trigger in this same LLM turn
+                    if "SYSTEM_TRIGGER_RESUME_REQUEST" in buffer.strip() and not manual_trigger_fired_this_turn:
                         logger.info("Detected SYSTEM_TRIGGER_RESUME_REQUEST phrase. Suppressing output and triggering tool.")
                         suppress_output_this_turn = True # Suppress all further output for this turn
+                        manual_trigger_fired_this_turn = True # Mark trigger as fired for this turn
                         try:
                             # Manually call the tool function (must be async)
                             await self.resume_tools.request_resume()
@@ -122,12 +125,12 @@ class PrepzoAgent(Agent):
             if hasattr(chunk, 'delta') and hasattr(chunk.delta, 'tool_calls') and chunk.delta.tool_calls:
                 try:
                     tool_calls_str = str(chunk.delta.tool_calls)
-                    logger.info(f"LLM generated tool_calls chunk: {tool_calls_str}")
+                    # logger.info(f"LLM generated tool_calls chunk: {tool_calls_str}") # Removed tool call logging
                     self.conversation_manager.add_message({
                         "role": "llm_tool_call_generated", 
                         "content": tool_calls_str
                     })
-                    logger.info("Logged LLM tool_call chunk to ConversationManager")
+                    # logger.info("Logged LLM tool_call chunk to ConversationManager") # Removed tool call logging
                 except Exception as log_err:
                     logger.error(f"Error logging tool_calls chunk: {log_err}")
 
@@ -142,8 +145,8 @@ class PrepzoAgent(Agent):
             try:
                 tool_calls_obj = chunk.delta.tool_calls
                 # Log type and content even if it might be None or empty
-                logger.info(f"LLM Chunk [{chunk_index}] - tool_calls type: {type(tool_calls_obj)}")
-                logger.info(f"LLM Chunk [{chunk_index}] - tool_calls content: {str(tool_calls_obj)}")
+                # logger.info(f"LLM Chunk [{chunk_index}] - tool_calls type: {type(tool_calls_obj)}") # Removed tool call logging
+                # logger.info(f"LLM Chunk [{chunk_index}] - tool_calls content: {str(tool_calls_obj)}") # Removed tool call logging
                 
             except Exception as tool_log_err:
                  logger.error(f"Error logging tool_calls details for chunk [{chunk_index}]: {tool_log_err}") 
