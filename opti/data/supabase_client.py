@@ -17,7 +17,7 @@ class SupabaseEmailClient:
         self.client = None
         try:
             url = settings.SUPABASE_URL
-            key = settings.SUPABASE_KEY
+            key = settings.SUPABASE_SERVICE_ROLE_KEY
             if not url or not key:
                  logger.error("Missing SUPABASE_URL or SUPABASE_KEY. Cannot initialize SupabaseEmailClient.")
                  return # Prevent initialization if config is missing
@@ -136,7 +136,7 @@ class SupabaseAgentConfigClient:
         self.client: Optional[Client] = None # Ensure type hint for client
         try:
             url = settings.SUPABASE_URL
-            key = settings.SUPABASE_KEY
+            key = settings.SUPABASE_SERVICE_ROLE_KEY
             if not url or not key:
                 logger.error("Missing SUPABASE_URL or SUPABASE_KEY. Cannot initialize SupabaseAgentConfigClient.")
                 return  # Prevent initialization if config is missing

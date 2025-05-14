@@ -6,9 +6,13 @@ import logging
 import pathlib
 from dotenv import load_dotenv
 import importlib.metadata
+from opti.utils.aws_secrets import load_aws_secrets
 
 # Load environment variables
-load_dotenv()
+# load_dotenv()
+AWS_SECRET_NAME =  'prepzo-agent-secrets'
+AWS_REGION =  'us-east-1'
+load_aws_secrets(AWS_SECRET_NAME, region_name=AWS_REGION)
 
 # Configure logging
 logger = logging.getLogger("settings")
@@ -36,14 +40,19 @@ LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET")
 # Supabase settings
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 # Pinecone settings
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_REGION = os.getenv("PINECONE_REGION")
 PINECONE_INDEX_NAME = "coachingbooks"
 
+SENDER_EMAIL=os.getenv("SENDER_EMAIL", "your-email@example.com")
+SMTP_SERVER=os.getenv("SMTP_SERVER", "smtp.example.com")
+SMTP_PORT=int(os.getenv("SMTP_PORT", "587"))
+SMTP_PASSWORD=os.getenv("SMTP_PASSWORD", "your-smtp-password")
 
-TTS_PROVIDER = "google"
+TTS_PROVIDER = "openai"
 
 # Also ensure your Google TTS specific settings are present and correct:
 GOOGLE_TTS_LANGUAGE = "en-US"

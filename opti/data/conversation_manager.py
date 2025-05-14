@@ -28,7 +28,7 @@ class ConversationManager:
         
         # Initialize Supabase client
         try:
-            self.supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+            self.supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
             logger.info(f"ConversationManager initialized with session_id: {self.session_id}")
         except Exception as e:
             logger.error(f"Failed to initialize Supabase client in ConversationManager: {e}")
@@ -229,3 +229,19 @@ class ConversationManager:
             logger.error(f"Error creating message data: {str(e)}")
             logger.error(traceback.format_exc())
             raise 
+        
+    async def flush_and_close(self):
+        """
+        Flush any pending conversation data and close resources
+        """
+        try:
+            logger.info(f"Flushing and closing ConversationManager for session {self.session_id}")
+            # Final update of conversation history
+            await self.update_conversation_history()
+            # If the supabase client or other resources need explicit closing, do it here
+            # e.g., await self.supabase.close()  # if supported
+            logger.info("ConversationManager flush and close completed")
+        except Exception as e:
+            logger.error(f"Error in flush_and_close: {e}")
+            logger.error(traceback.format_exc())
+            raise

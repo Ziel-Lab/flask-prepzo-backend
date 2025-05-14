@@ -10,6 +10,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime
 from dotenv import load_dotenv
+from ..config import settings
 
 load_dotenv()
 
@@ -122,10 +123,10 @@ class EmailTools:
                 return error_msg
                 
             # Get SMTP settings from environment variables
-            sender_email = os.getenv("SENDER_EMAIL", "your-email@example.com")
-            smtp_server = os.getenv("SMTP_SERVER", "smtp.example.com")
-            smtp_port = int(os.getenv("SMTP_PORT", "587"))
-            smtp_password = os.getenv("SMTP_PASSWORD", "your-smtp-password")
+            sender_email = settings.SENDER_EMAIL                # os.getenv("SENDER_EMAIL", "your-email@example.com")
+            smtp_server =  settings.SMTP_SERVER                                     # os.getenv("SMTP_SERVER", "smtp.example.com")
+            smtp_port =    settings.SMTP_PORT                                     # int(os.getenv("SMTP_PORT", "587"))
+            smtp_password = settings.SMTP_PASSWORD                                                        #os.getenv("SMTP_PASSWORD", "your-smtp-password")
             
             # Create the email
             msg = MIMEMultipart()

@@ -9,7 +9,7 @@ from livekit.agents import (
     ConversationItemAddedEvent, 
     AgentStateChangedEvent,
 )
-from livekit.plugins import deepgram, silero, google, openai
+from livekit.plugins import deepgram, silero, google, openai, noise_cancellation
 from .agent import PrepzoAgent
 from ..data.conversation_manager import ConversationManager
 from ..config import settings
@@ -75,8 +75,8 @@ async def initialize_session(ctx: JobContext):
         
         elif hasattr(settings, 'TTS_PROVIDER') and settings.TTS_PROVIDER == "openai":
             tts_plugin = openai.TTS(
-                model=getattr(settings, 'OPENAI_TTS_MODEL', 'tts-1'),
-                voice=getattr(settings, 'OPENAI_TTS_VOICE', 'nova')
+                model=getattr(settings, 'DEFAULT_TTS_MODEL', 'tts-1'),
+                voice=getattr(settings, 'DEFAULT_TTS_VOICE', 'nova')
             )
             logger.info(f"TTS client initialized with OpenAI TTS (Model: {getattr(settings, 'OPENAI_TTS_MODEL', 'tts-1')}, Voice: {getattr(settings, 'OPENAI_TTS_VOICE', 'nova')})")
         
@@ -88,7 +88,19 @@ async def initialize_session(ctx: JobContext):
             )
             logger.info(f"TTS client initialized with default OpenAI TTS (Model: {getattr(settings, 'OPENAI_TTS_MODEL', 'tts-1')}, Voice: {getattr(settings, 'OPENAI_TTS_VOICE', 'nova')})")
         
-        stt_plugin = deepgram.STT()
+        stt_plugin = deepgram.STT(
+            model="nova-2-conversationalai",
+            # interim_results=True,
+            smart_format=True,
+            # punctuate=True,
+            filler_words=True,
+            profanity_filter=False,
+            keywords=[("LiveKit", 1.5)],
+            language="en-US",
+            endpointing_ms=25,
+            no_delay=True,
+            numerals=True
+        )
         logger.info("STT client initialized")
         
         llm_plugin = google.LLM(
@@ -142,7 +154,9 @@ async def initialize_session(ctx: JobContext):
 
         # Start the session
         logger.info(f"Starting AgentSession in room {ctx.room.name}")
-        input_options = RoomInputOptions()
+        input_options = RoomInputOptions(
+            noise_cancellation=noise_cancellation.BVC()
+        )
         await session.start(room=ctx.room, agent=agent, room_input_options=input_options)
         logger.info(f"AgentSession started for room {ctx.room.name}")
 
