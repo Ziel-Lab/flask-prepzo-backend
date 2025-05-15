@@ -10,7 +10,8 @@ from opti.utils.aws_secrets import load_aws_secrets
 
 # Load environment variables
 # load_dotenv()
-AWS_SECRET_NAME =  'prepzo-agent-secrets'
+AWS_SECRET_NAME = 'dev-prepzo'  #dev
+# AWS_SECRET_NAME =  'prepzo-agent-dev'  #prod
 AWS_REGION =  'us-east-1'
 load_aws_secrets(AWS_SECRET_NAME, region_name=AWS_REGION)
 
