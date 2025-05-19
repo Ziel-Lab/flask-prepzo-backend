@@ -105,14 +105,15 @@ async def initialize_session(ctx: JobContext):
         )
         logger.info("STT client initialized")
         
-        # llm_plugin = google.LLM(
-        #     model=settings.DEFAULT_LLM_MODEL,
-        #     temperature=settings.DEFAULT_LLM_TEMPERATURE
-        # )\
-        agent_config_client = SupabaseAgentConfigClient()
-        supabase_client = agent_config_client.client
+        llm_plugin = google.LLM(
+            model=settings.DEFAULT_LLM_MODEL,
+            temperature=settings.DEFAULT_LLM_TEMPERATURE
+        )
+        # agent_config_client = SupabaseAgentConfigClient()
+        # supabase_client = agent_config_client.client
 
-        llm_plugin = DynamicLLM(supabase_client)
+        # llm_plugin = DynamicLLM(supabase_client)
+        # await llm_plugin._refresh()  
         logger.info("LLM client initialized")
         
         # Connect to the room
