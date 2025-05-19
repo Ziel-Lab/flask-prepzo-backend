@@ -69,6 +69,9 @@ FRONTEND_ORIGIN = os.environ.get('FRONTEND_ORIGIN')
 CORS(app, origins=[FRONTEND_ORIGIN, 'http://localhost:3000'], supports_credentials=True)
 
 # Session Configuration
+app.config['SESSION_COOKIE_DOMAIN'] = 'dev.prepzo.ai'
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'
 app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'a_default_secret_key_for_development') 
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30) 
 

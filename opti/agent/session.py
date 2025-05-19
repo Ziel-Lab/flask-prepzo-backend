@@ -91,10 +91,10 @@ async def initialize_session(ctx: JobContext):
         stt_plugin = deepgram.STT(
             model="nova-2-conversationalai",
             # interim_results=True,
-            smart_format=True,
+            # smart_format=True,
             # punctuate=True,
-            filler_words=True,
-            profanity_filter=False,
+            # filler_words=True,
+            # profanity_filter=False,
             keywords=[("LiveKit", 1.5)],
             language="en-US",
             endpointing_ms=25,
