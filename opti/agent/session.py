@@ -1,6 +1,8 @@
 import asyncio
 import traceback
 import logging
+import boto3
+import json
 from livekit.agents import (
     Agent,
     AgentSession,
@@ -9,7 +11,7 @@ from livekit.agents import (
     ConversationItemAddedEvent, 
     AgentStateChangedEvent,
 )
-from livekit.plugins import deepgram, silero, google, openai, elevenlabs, noise_cancellation
+from livekit.plugins import deepgram, silero, google,groq, openai, elevenlabs, noise_cancellation
 from .agent import PrepzoAgent
 from .dynamic_llm import DynamicLLM
 from ..data.conversation_manager import ConversationManager
@@ -22,6 +24,95 @@ from ..prompts.agent_prompts import AGENT_INSTRUCTIONS as DEFAULT_AGENT_INSTRUCT
 # Use centralized logger
 logger = setup_logger("agent-session")
 
+
+def get_llm_plugin_from_aws():
+    """
+    Pulls LLM_PROVIDER (and any model/API‑key details) every time
+    this is called, so that each new session picks up the latest secret.
+    """
+    client = boto3.client('secretsmanager', region_name=settings.AWS_REGION)
+    resp = client.get_secret_value(SecretId='llm-config')
+    secret = json.loads(resp['SecretString'])
+    provider = secret.get('LLM_PROVIDER', '').lower()
+
+    if provider == 'google':
+        logger.info("Using Google LLM (from AWS Secret)")
+        return google.LLM(
+            model=secret.get('MODEL', settings.DEFAULT_LLM_MODEL),
+            temperature=float(secret.get('TEMPERATURE', settings.DEFAULT_LLM_TEMPERATURE)),
+        )
+
+    elif provider == 'groq':
+        logger.info("Using Groq LLM (from AWS Secret)")
+        return groq.LLM(
+            model=secret.get('MODEL', settings.GROQ_LLM_MODEL),
+            temperature=float(secret.get('TEMPERATURE', settings.GROQ_TEMPERATURE)),
+            api_key=secret.get('API_KEY', settings.GROQ_API_KEY),
+        )
+
+    elif provider == 'openai':
+        logger.info("Using OpenAI LLM (from AWS Secret)")
+        return openai.LLM(
+            model=secret.get('MODEL', settings.OPENAI_MODEL),
+            temperature=float(secret.get('TEMPERATURE', settings.OPENAI_TEMPERATURE)),
+            api_key=secret.get('API_KEY', settings.OPENAI_API_KEY),
+        )
+
+    else:
+        raise ValueError(f"Unsupported LLM provider in secret: {provider!r}")
+
+def get_tts_plugin_from_aws():
+    """
+    Fetches TTS settings from AWS Secrets Manager on each call,
+    and returns an initialized TTS plugin instance.
+    """
+    client = boto3.client('secretsmanager', region_name=settings.AWS_REGION)
+    resp = client.get_secret_value(SecretId='llm-config')
+    secret = json.loads(resp['SecretString'])
+    provider = secret.get('TTS_PROVIDER', 'openai').lower()
+
+    if provider == 'elevenlabs':
+        # Required keys: ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID, ELEVENLABS_MODEL
+        api_key  = secret['ELEVENLABS_API_KEY']
+        voice_id = secret.get('ELEVENLABS_VOICE_ID', settings.ELEVENLABS_VOICE_ID)
+        model    = secret.get('ELEVENLABS_MODEL', settings.ELEVENLABS_MODEL)
+        logger.info("Initializing ElevenLabs TTS from AWS secret")
+        return elevenlabs.TTS(model=model, voice_id=voice_id, api_key=api_key)
+
+    elif provider == 'openai':
+        # Required keys: OPENAI_API_KEY, DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE
+        api_key = secret['OPENAI_TTS_API_KEY']
+        model   = secret.get('OPENAI_TTS_MODEL', settings.OPENAI_TTS_MODEL)
+        voice   = secret.get('OPENAI_TTS_VOICE', settings.OPENAI_TTS_VOICE)
+        logger.info("Initializing OpenAI TTS from AWS secret")
+        return openai.TTS(model=model, voice=voice, api_key=api_key)
+
+    else:
+        error = f"Unsupported TTS provider in secret: {provider}"
+        logger.error(error)
+        raise ValueError(error)
+
+def get_stt_plugin_from_aws():
+    """
+    Fetches STT settings from AWS Secrets Manager on each call,
+    and returns an initialized STT plugin instance.
+    """
+    client = boto3.client('secretsmanager', region_name=settings.AWS_REGION)
+    resp = client.get_secret_value(SecretId='llm-config')
+    secret = json.loads(resp['SecretString'])
+
+    api_key       = secret['DEEPGRAM_API_KEY']
+    model         = secret.get('STT_MODEL', 'nova-2-conversationalai')
+    language      = secret.get('LANGUAGE', 'en-US')
+
+    logger.info("Initializing Deepgram STT from AWS secret")
+    return deepgram.STT(
+            api_key=api_key,
+            model=model,
+            language=language,
+    
+        )
+    
 async def initialize_session(ctx: JobContext):
     """
     Initialize and run the agent session
@@ -51,70 +142,43 @@ async def initialize_session(ctx: JobContext):
         vad_plugin = await asyncio.to_thread(silero.VAD.load)
         logger.info("VAD model initialized")
         
-        # Initialize TTS plugin based on settings
-        if hasattr(settings, 'TTS_PROVIDER') and settings.TTS_PROVIDER == "google":
-            try:
-                # Ensure Google TTS settings are available
-                if not all(hasattr(settings, attr) for attr in ['GOOGLE_TTS_LANGUAGE', 'GOOGLE_TTS_VOICE_NAME', 'GOOGLE_TTS_GENDER']):
-                    logger.error("Google TTS provider selected, but required settings (GOOGLE_TTS_LANGUAGE, GOOGLE_TTS_VOICE_NAME, GOOGLE_TTS_GENDER) are missing. Falling back to OpenAI TTS.")
-                    raise AttributeError("Missing Google TTS settings")
+        tts_task = asyncio.to_thread(get_tts_plugin_from_aws)
+        stt_task = asyncio.to_thread(get_stt_plugin_from_aws)
+        llm_task = asyncio.to_thread(get_llm_plugin_from_aws)
 
-                tts_plugin = google.TTS(
-                    language=settings.GOOGLE_TTS_LANGUAGE,
-                    voice_name=settings.GOOGLE_TTS_VOICE_NAME,
-                    gender=settings.GOOGLE_TTS_GENDER
-                )
-                logger.info(f"TTS client initialized with Google TTS (Language: {settings.GOOGLE_TTS_LANGUAGE}, Voice: {settings.GOOGLE_TTS_VOICE_NAME}, Gender: {settings.GOOGLE_TTS_GENDER}, Speaking Rate: {getattr(settings, 'GOOGLE_TTS_SPEAKING_RATE', 1.0)})")
-            except Exception as e:
-                logger.error(f"Failed to initialize Google TTS with specified settings: {e}. Falling back to OpenAI TTS.")
-                # Fallback to OpenAI if Google TTS initialization fails
-                tts_plugin = openai.TTS(
-                    model=getattr(settings, 'OPENAI_TTS_MODEL', 'tts-1'), # Provide default if not set
-                    voice=getattr(settings, 'OPENAI_TTS_VOICE', 'nova')   # Provide default if not set
-                )
-                logger.info(f"TTS client initialized with fallback OpenAI TTS (Model: {getattr(settings, 'OPENAI_TTS_MODEL', 'tts-1')}, Voice: {getattr(settings, 'OPENAI_TTS_VOICE', 'nova')})")
-        
-        elif hasattr(settings, 'TTS_PROVIDER') and settings.TTS_PROVIDER == "elevenlabs":
-            tts_plugin = elevenlabs.TTS(
-                model=getattr(settings, 'ELEVENLABS_MODEL', 'eleven_multilingual_v2'),
-                voice_id=getattr(settings, 'ELEVENLABS_VOICE_ID', 'EXAVITQu4vr4xnSDxMaL'),  # Default voice ID
-                api_key=settings.ELEVENLABS_API_KEY
-            )
-            logger.info(f"TTS client initialized with OpenAI TTS (Model: {getattr(settings, 'OPENAI_TTS_MODEL', 'tts-1')}, Voice: {getattr(settings, 'OPENAI_TTS_VOICE', 'nova')})")
-        
-        else: # Default or if TTS_PROVIDER is not set or invalid
-            logger.warning(f"TTS_PROVIDER setting is missing or invalid ('{getattr(settings, 'TTS_PROVIDER', 'Not Set')}'). Defaulting to OpenAI TTS.")
-            tts_plugin = openai.TTS(
-                model=getattr(settings, 'OPENAI_TTS_MODEL', 'tts-1'),
-                voice=getattr(settings, 'OPENAI_TTS_VOICE', 'nova')
-            )
-            logger.info(f"TTS client initialized with default OpenAI TTS (Model: {getattr(settings, 'OPENAI_TTS_MODEL', 'tts-1')}, Voice: {getattr(settings, 'OPENAI_TTS_VOICE', 'nova')})")
-        
-        stt_plugin = deepgram.STT(
-            model="nova-2-conversationalai",
-            # interim_results=True,
-            # smart_format=True,
-            # punctuate=True,
-            # filler_words=True,
-            # profanity_filter=False,
-            keywords=[("LiveKit", 1.5)],
-            language="en-US",
-            endpointing_ms=25,
-            no_delay=True,
-            numerals=True
+        results = await asyncio.gather(
+            tts_task, stt_task, llm_task,
+            return_exceptions=True
         )
-        logger.info("STT client initialized")
+        def _fallback(name):
+            if name == 'tts':
+                return openai.TTS(
+                    model=settings.DEFAULT_TTS_MODEL,
+                    voice=settings.DEFAULT_TTS_VOICE,
+                    api_key=settings.OPENAI_API_KEY
+                )
+            if name == 'stt':
+                return deepgram.STT(
+                    api_key=settings.DEEPGRAM_API_KEY,
+                    model='nova-2-conversationalai',
+                    language='en-US'
+                )
+            if name == 'llm':
+                return google.LLM(
+                    model=settings.DEFAULT_LLM_MODEL,
+                    temperature=settings.DEFAULT_LLM_TEMPERATURE
+                )
         
-        llm_plugin = google.LLM(
-            model=settings.DEFAULT_LLM_MODEL,
-            temperature=settings.DEFAULT_LLM_TEMPERATURE
-        )
-        # agent_config_client = SupabaseAgentConfigClient()
-        # supabase_client = agent_config_client.client
+        plugins = []
+        for name, res in zip(['tts','stt','llm'], results):
+            if isinstance(res, Exception):
+                logger.error(f"{name.upper()} init failed: {res}")
+                plugins.append(_fallback(name))
+            else:
+                plugins.append(res)
 
-        # llm_plugin = DynamicLLM(supabase_client)
-        # await llm_plugin._refresh()  
-        logger.info("LLM client initialized")
+        tts_plugin, stt_plugin, llm_plugin = plugins
+
         
         # Connect to the room
         logger.info(f"Agent JobContext received for room {ctx.room.name}")
