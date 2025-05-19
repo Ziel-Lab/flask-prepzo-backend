@@ -9,8 +9,9 @@ from livekit.agents import (
     ConversationItemAddedEvent, 
     AgentStateChangedEvent,
 )
-from livekit.plugins import deepgram, silero, google, openai, noise_cancellation
+from livekit.plugins import deepgram, silero, google, openai, elevenlabs, noise_cancellation
 from .agent import PrepzoAgent
+from .dynamic_llm import DynamicLLM
 from ..data.conversation_manager import ConversationManager
 from ..config import settings
 from ..utils.logging_config import setup_logger
@@ -73,10 +74,11 @@ async def initialize_session(ctx: JobContext):
                 )
                 logger.info(f"TTS client initialized with fallback OpenAI TTS (Model: {getattr(settings, 'OPENAI_TTS_MODEL', 'tts-1')}, Voice: {getattr(settings, 'OPENAI_TTS_VOICE', 'nova')})")
         
-        elif hasattr(settings, 'TTS_PROVIDER') and settings.TTS_PROVIDER == "openai":
-            tts_plugin = openai.TTS(
-                model=getattr(settings, 'DEFAULT_TTS_MODEL', 'tts-1'),
-                voice=getattr(settings, 'DEFAULT_TTS_VOICE', 'nova')
+        elif hasattr(settings, 'TTS_PROVIDER') and settings.TTS_PROVIDER == "elevenlabs":
+            tts_plugin = elevenlabs.TTS(
+                model=getattr(settings, 'ELEVENLABS_MODEL', 'eleven_multilingual_v2'),
+                voice_id=getattr(settings, 'ELEVENLABS_VOICE_ID', 'EXAVITQu4vr4xnSDxMaL'),  # Default voice ID
+                api_key=settings.ELEVENLABS_API_KEY
             )
             logger.info(f"TTS client initialized with OpenAI TTS (Model: {getattr(settings, 'OPENAI_TTS_MODEL', 'tts-1')}, Voice: {getattr(settings, 'OPENAI_TTS_VOICE', 'nova')})")
         
@@ -103,10 +105,14 @@ async def initialize_session(ctx: JobContext):
         )
         logger.info("STT client initialized")
         
-        llm_plugin = google.LLM(
-            model=settings.DEFAULT_LLM_MODEL,
-            temperature=settings.DEFAULT_LLM_TEMPERATURE
-        )
+        # llm_plugin = google.LLM(
+        #     model=settings.DEFAULT_LLM_MODEL,
+        #     temperature=settings.DEFAULT_LLM_TEMPERATURE
+        # )\
+        agent_config_client = SupabaseAgentConfigClient()
+        supabase_client = agent_config_client.client
+
+        llm_plugin = DynamicLLM(supabase_client)
         logger.info("LLM client initialized")
         
         # Connect to the room

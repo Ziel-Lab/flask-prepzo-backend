@@ -29,10 +29,29 @@ except ImportError:
 ROOT_DIR = pathlib.Path(__file__).parent.parent.parent
 UPLOAD_FOLDER = ROOT_DIR / 'uploads'
 
-# API Keys
+#llm
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini")
+GROQ_API_KEY=os.getenv("GROQ_API_KEY")
+GROQ_MODEL=os.getenv("GROQ_MODEL", "mixtral-8x7b-32768")
+GROQ_TEMPERATURE=os.getenv("GROQ_TEMPERATURE", 0.8)
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL=os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_TEMPERATURE=os.getenv("OPENAI_TEMPERATURE", 0.8)
+
+GEMINI_API_KEY=os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL=os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+GEMINI_TEMPERATURE=os.getenv("GEMINI_TEMPERATURE", 0.8)
+
+# API Keys
+
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+#Elevenlabs
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+ELEVENLABS_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_multilingual_v2")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")
 
 # LiveKit settings
 LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
@@ -53,7 +72,7 @@ SMTP_SERVER=os.getenv("SMTP_SERVER", "smtp.example.com")
 SMTP_PORT=int(os.getenv("SMTP_PORT", "587"))
 SMTP_PASSWORD=os.getenv("SMTP_PASSWORD", "your-smtp-password")
 
-TTS_PROVIDER = "openai"
+TTS_PROVIDER = os.getenv("TTS_PROVIDER", "openai")
 
 # Also ensure your Google TTS specific settings are present and correct:
 GOOGLE_TTS_LANGUAGE = "en-US"
@@ -71,7 +90,7 @@ DEFAULT_TTS_VOICE = "nova"
 DEFAULT_LLM_MODEL = "gemini-2.5-flash-preview-04-17"
 DEFAULT_LLM_TEMPERATURE = 0.8
 
-GEMINI_API_KEY= os.getenv("GEMINI_API_KEY")
+
 GCP_CREDENTIALS_PATH=r"D:\prepzo\prepzo-backend\flask-prepzo-backend\opti\cred.json"
 # Server settings
 FLASK_SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "a_default_secret_key_for_development")
@@ -88,9 +107,15 @@ def validate_settings():
     if not PINECONE_API_KEY or not PINECONE_REGION:
         missing.append("Pinecone credentials (PINECONE_API_KEY, PINECONE_REGION)")
     
-    if not OPENAI_API_KEY:
+    if LLM_PROVIDER == "openai" and not OPENAI_API_KEY:
         missing.append("OpenAI API key (OPENAI_API_KEY)")
+
+    elif LLM_PROVIDER == "groq" and not GROQ_API_KEY:
+        missing.append("Groq API key (GROQ_API_KEY)")
         
+    elif LLM_PROVIDER == "gemini" and not GEMINI_API_KEY:
+        missing.append("Gemini API key (GEMINI_API_KEY)")
+
     if not LIVEKIT_API_KEY or not LIVEKIT_API_SECRET:
         missing.append("LiveKit credentials (LIVEKIT_API_KEY, LIVEKIT_API_SECRET)")
     
