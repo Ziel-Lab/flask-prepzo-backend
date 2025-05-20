@@ -68,15 +68,24 @@ app = Flask(__name__)
 FRONTEND_ORIGIN = os.environ.get('FRONTEND_ORIGIN')
 CORS(app, origins=[FRONTEND_ORIGIN, 'http://localhost:3000'], supports_credentials=True)
 
-# Session Configuration
-app.config['SESSION_COOKIE_DOMAIN'] = 'dev.prepzo.ai'
-app.config['SESSION_COOKIE_SECURE'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'None'
-app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'a_default_secret_key_for_development') 
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30) 
-
 # Get Application Environment
 APP_ENV = os.environ.get('APP_ENV', 'production').lower()
+
+# Session Configuration based on APP_ENV
+if APP_ENV == 'development':
+    logger.info("Development environment detected. Adjusting session cookie settings for localhost.")
+    app.config['SESSION_COOKIE_DOMAIN'] = None  # Allows cookie to be set for the current domain (e.g., localhost)
+    app.config['SESSION_COOKIE_SECURE'] = False # Allows cookie to be sent over HTTP
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax' # 'Lax' is a good default for development
+else:  # production or other environments
+    logger.info(f"Running in {APP_ENV} environment. Using production session cookie settings.")
+    # Ensure these are fetched from env vars or secure defaults for production
+    app.config['SESSION_COOKIE_DOMAIN'] = os.environ.get('SESSION_COOKIE_DOMAIN', 'dev.prepzo.ai')
+    app.config['SESSION_COOKIE_SECURE'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'None'
+
+app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'a_default_secret_key_for_development')
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30)
 
 # Load page passwords
 PAGE_PASSWORDS_STR = os.environ.get('PAGE_PASSWORDS', 'password123')
@@ -192,6 +201,7 @@ def verify_password():
     if APP_ENV == 'development':
         session['password_verified_at'] = datetime.now(timezone.utc) # Store aware UTC timestamp
         session.permanent = True
+        session.modified = True # Ensure session is saved
         return jsonify({"message": "Authentication successful (dev mode)"}), 200
 
     data = request.get_json()
@@ -203,6 +213,7 @@ def verify_password():
     if submitted_password in VALID_PASSWORDS:
         session['password_verified_at'] = datetime.now(timezone.utc) # Store aware UTC timestamp
         session.permanent = True # Use the configured session lifetime
+        session.modified = True # Ensure session is saved
         logger.info("Password verified successfully, timestamp stored in session.")
         return jsonify({"message": "Authentication successful"}), 200
     else:
