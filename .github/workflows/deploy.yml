@@ -9,6 +9,10 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Determine short SHA
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Checkout code
         uses: actions/checkout@v3
 
@@ -25,10 +29,10 @@ jobs:
 
       - name: Build, tag, and push image to ECR
         env:
+          IMAGE_TAG: ${{ steps.vars.outputs.sha_short }}
           ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
         run: |
-          IMAGE_TAG=$(git rev-parse --short HEAD)
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
@@ -41,7 +45,7 @@ jobs:
           script: |
             set -e
 
-            IMAGE_TAG=$(git rev-parse --short HEAD)
+            IMAGE_TAG=${{ steps.vars.outputs.sha_short }}
             ECR_REGISTRY=${{ secrets.ECR_REGISTRY }}
             ECR_REPOSITORY=${{ secrets.ECR_REPOSITORY }}
             CONTAINER_NAME=prepzo-dev
@@ -64,19 +68,23 @@ jobs:
             docker stop $CONTAINER_NAME || true
             docker rm $CONTAINER_NAME || true
             docker run -d --restart always -p 127.0.0.1:$PORT:$PORT --name $CONTAINER_NAME $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-
-            # Health check
-            sleep 10
+            
+            # Health-check & rollback
+            sleep 5
             if curl -f http://localhost:$PORT/health; then
               echo "$IMAGE_TAG" > ~/previous_image_tag.txt
               echo "✅ Deployment successful."
             else
               echo "❌ Health check failed. Rolling back..."
               docker stop $CONTAINER_NAME || true
-              docker rm $CONTAINER_NAME || true
+              docker rm   $CONTAINER_NAME || true
               if [ -n "$PREVIOUS_IMAGE_TAG" ]; then
-                docker run -d --restart always -p $PORT:$PORT --name $CONTAINER_NAME $ECR_REGISTRY/$ECR_REPOSITORY:$PREVIOUS_IMAGE_TAG
+                docker run -d --restart always \
+                  -p 127.0.0.1:$PORT:$PORT \
+                  --name $CONTAINER_NAME \
+                  $ECR_REGISTRY/$ECR_REPOSITORY:$PREVIOUS_IMAGE_TAG
               else
                 echo "⚠️ No previous image to roll back to."
               fi
             fi
+            
