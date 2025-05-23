@@ -73,7 +73,7 @@ jobs:
             sleep 5 
             if curl -f http://localhost:$PORT/health; then
               echo "$IMAGE_TAG" > ~/previous_image_tag.txt
-              echo "✅ Deployment successful."
+              echo "✅ Deployment successful.🔥"
             else
               echo "❌ Health check failed. Rolling back..."
               docker stop $CONTAINER_NAME || true
