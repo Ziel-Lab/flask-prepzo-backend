@@ -32,7 +32,7 @@ jobs:
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-      - name: Deploy to EC2 with rollback
+            - name: Deploy to EC2 with rollback
         uses: appleboy/ssh-action@v0.1.6
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -40,45 +40,43 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             set -e
+
             IMAGE_TAG=$(git rev-parse --short HEAD)
             ECR_REGISTRY=${{ secrets.ECR_REGISTRY }}
             ECR_REPOSITORY=${{ secrets.ECR_REPOSITORY }}
             CONTAINER_NAME=prepzo-dev
             PORT=5001
 
+            echo "Deploying image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
             # Login to ECR
             aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin $ECR_REGISTRY
 
-            # Pull new image
-            docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-
-            # Save current image tag
-            if [ -f previous_image_tag.txt ]; then
-              PREVIOUS_IMAGE_TAG=$(cat previous_image_tag.txt)
+            # Check if previous tag file exists
+            if [ -f ~/previous_image_tag.txt ]; then
+              PREVIOUS_IMAGE_TAG=$(cat ~/previous_image_tag.txt)
             else
               PREVIOUS_IMAGE_TAG=""
             fi
 
-            # Stop and remove current container
+            # Deploy new container
+            docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
             docker stop $CONTAINER_NAME || true
             docker rm $CONTAINER_NAME || true
-
-            # Run new container
             docker run -d --restart always -p $PORT:$PORT --name $CONTAINER_NAME $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
             # Health check
-            sleep 10
+            sleep 5
             if curl -f http://localhost:$PORT/health; then
-              echo $IMAGE_TAG > previous_image_tag.txt
-              echo "Deployment successful."
+              echo "$IMAGE_TAG" > ~/previous_image_tag.txt
+              echo "✅ Deployment successful."
             else
-              echo "Health check failed. Rolling back to previous version."
+              echo "❌ Health check failed. Rolling back..."
               docker stop $CONTAINER_NAME || true
               docker rm $CONTAINER_NAME || true
               if [ -n "$PREVIOUS_IMAGE_TAG" ]; then
                 docker run -d --restart always -p $PORT:$PORT --name $CONTAINER_NAME $ECR_REGISTRY/$ECR_REPOSITORY:$PREVIOUS_IMAGE_TAG
               else
-                echo "No previous image tag found. Rollback not possible."
-                exit 1
+                echo "⚠️ No previous image to roll back to."
               fi
             fi
