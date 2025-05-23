@@ -31,7 +31,8 @@ UPLOAD_FOLDER = ROOT_DIR / 'uploads'
 
 #llm
 
-
+OPENAI_TTS_MODEL = os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
+OPENAI_TTS_VOICE = os.getenv("OPENAI_TTS_VOICE", "nova")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL=os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_TEMPERATURE=float(os.getenv("OPENAI_TEMPERATURE", 0.8))
