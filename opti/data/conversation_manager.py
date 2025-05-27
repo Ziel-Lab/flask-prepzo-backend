@@ -79,7 +79,7 @@ class ConversationManager:
             
             # Log the response data
             response_data = result.model_dump() if hasattr(result, 'model_dump') else str(result)
-            logger.info(f"Session data stored successfully")
+            # logger.info(f"Session data stored successfully")
             return result
         except Exception as e:
             logger.error(f"Error storing session: {str(e)}")
@@ -94,7 +94,7 @@ class ConversationManager:
             Tuple of results from the database operations
         """
         try:
-            logger.info(f"Updating conversation history with {len(self.messages)} messages")
+            # logger.info(f"Updating conversation history with {len(self.messages)} messages")
             
             history_data = {
                 "session_id": self.session_id,
@@ -119,7 +119,7 @@ class ConversationManager:
             
             # Update conversation_histories table
             result = self.supabase.table("conversation_histories").upsert(history_data).execute()
-            logger.info(f"Conversation history updated successfully")
+            # logger.info(f"Conversation history updated successfully")
             
             return result
         except Exception as e:
@@ -147,7 +147,7 @@ class ConversationManager:
                 }
                 result = self.supabase.table("user_emails").upsert(email_data).execute()
                 self.emails.add(email)
-                logger.info(f"User email stored successfully")
+                # logger.info(f"User email stored successfully")
                 return result
             except Exception as e:
                 logger.error(f"Error storing user email: {str(e)}")
@@ -180,7 +180,7 @@ class ConversationManager:
             
             # Update conversation history immediately
             update_task = asyncio.create_task(self.update_conversation_history())
-            logger.info(f"Conversation update task created for message #{self.message_count}")
+            # logger.info(f"Conversation update task created for message #{self.message_count}")
             return update_task
         except Exception as e:
             logger.error(f"Error adding message: {str(e)}")
@@ -223,7 +223,7 @@ class ConversationManager:
                     "timestamp": timestamp
                 }
             
-            logger.info(f"Created {role} message data with event: {event_type}")
+            # logger.info(f"Created {role} message data with event: {event_type}")
             return message_data
         except Exception as e:
             logger.error(f"Error creating message data: {str(e)}")
@@ -235,7 +235,7 @@ class ConversationManager:
         Flush any pending conversation data and close resources
         """
         try:
-            logger.info(f"Flushing and closing ConversationManager for session {self.session_id}")
+            # logger.info(f"Flushing and closing ConversationManager for session {self.session_id}")
             # Final update of conversation history
             await self.update_conversation_history()
             # If the supabase client or other resources need explicit closing, do it here
