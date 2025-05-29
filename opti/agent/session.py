@@ -88,18 +88,21 @@ async def initialize_session(ctx: JobContext):
             )
             logger.info(f"TTS client initialized with default OpenAI TTS (Model: {getattr(settings, 'OPENAI_TTS_MODEL', 'tts-1')}, Voice: {getattr(settings, 'OPENAI_TTS_VOICE', 'nova')})")
         
-        stt_plugin = deepgram.STT(
-            model="nova-2-conversationalai",
-            # interim_results=True,
-            # smart_format=True,
-            # punctuate=True,
-            # filler_words=True,
-            # profanity_filter=False,
-            keywords=[("LiveKit", 1.5)],
-            language="en-US",
-            endpointing_ms=25,
-            no_delay=True,
-            numerals=True
+        # stt_plugin = deepgram.STT(
+        #     model="nova-2-conversationalai",
+        #     # interim_results=True,
+        #     # smart_format=True,
+        #     # punctuate=True,
+        #     # filler_words=True,
+        #     # profanity_filter=False,
+        #     keywords=[("LiveKit", 1.5)],
+        #     language="en-US",
+        #     endpointing_ms=25,
+        #     no_delay=True,
+        #     numerals=True
+        # )
+        stt_plugin = openai.STT(
+            model="whisper-1",
         )
         logger.info("STT client initialized")
         
