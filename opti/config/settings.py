@@ -68,7 +68,7 @@ DOCAI_LAYOUT_PROCESSOR_ID = os.getenv("DOCAI_LAYOUT_PROCESSOR_ID")
 # AI Model settings
 DEFAULT_TTS_MODEL = "gpt-4o-mini-tts"
 DEFAULT_TTS_VOICE = "nova"
-DEFAULT_LLM_MODEL = "gemini-2.5-flash-preview-04-17"
+DEFAULT_LLM_MODEL = "gemini-2.5-flash"
 DEFAULT_LLM_TEMPERATURE = 0.8
 
 GEMINI_API_KEY= os.getenv("GEMINI_API_KEY")
